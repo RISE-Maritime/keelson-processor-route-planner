@@ -38,9 +38,15 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
   `inf`). numpy + `shapely.contains_xy`; no networkx/scipy. Verified live: 3 distinct safe routes
   (~3 nm) through the Göteborg corridor in ~0.6 s. *(→ keelson.Route serialization is P5; RPC wiring
   P6; turn-penalty-in-search + AIS/weather P11.)*
-- [ ] **P5 — Serialize → `keelson.Route`.** Map waypoints/legs/profile/goal/validation/no-go to the
-  proto; planner-specific metrics/evidence/cost-weights into an `Extensions` entry. See
-  [KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md).
+- [x] **P5 — Serialize → `keelson.Route`.** `model/serialize.py`: `route_from_planned` /
+  `routes_from_alternatives` map a P4 `PlannedRoute` → `keelson.Route` — waypoints (`position`/
+  `planned_sog_knots`/`radius_m`/`operational_context`) + outgoing `Leg`s (`safety_depth_m`/
+  `ukc_static_m`/`LOXODROME`/`sog_*`), `RouteInfo` (reusing `vessel_profile`), `status`
+  (RECOMMENDED/PLANNED), timestamps, and a `se.rise`/`route-planner` `Extensions` entry carrying
+  metrics/cost-breakdown/snap-flags/provenance/generation metadata as attributes. Validation
+  (`challenges`/`issues`) + `hazard_zones` left for P7. Verified live: adapter→nav→plan→serialize
+  emits valid `keelson.Route` alternatives (~1.8 KB each, full provenance). See
+  [KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md) §2.
 - [ ] **P6 — Keelson integration.** `RoutePlanner` RPC queryable (`plan_route`/`validate_route`/
   `get_route`/`select_route`/`export_vehicle_mission`); publish `route_planned`/`route` +
   `RouteStatusUpdate` on `route_status`. Optional debug overlays on `navigable_waters_geojson` /

@@ -1,11 +1,15 @@
 """Internal model — keelson.Route is the canonical artifact (keelson protos are primary).
 
-P1 contracts live here:
-- store.py           in-memory ``RouteStore`` (route_id -> keelson.Route)
-- vessel_profile.py  vessel profile <-> RouteInfo + route-planner Extensions mapping
+Modules here:
+- store.py           in-memory ``RouteStore`` (route_id -> keelson.Route)               (P1)
+- vessel_profile.py  vessel profile <-> RouteInfo + route-planner Extensions mapping     (P1)
+- serialize.py       PlannedRoute (pathfinding) -> keelson.Route                         (P5)
 
-A thin internal planning struct (grid path, per-cell cost breakdown, candidate scoring) lives only
-during a single ``plan`` call; planner-specific data rides in a route ``Extensions`` entry
-(``manufacturer: "se.rise"``, ``name: "route-planner"``). The internal-struct ⇄ keelson.Route
-serialization beyond this mapping is P5. See docs/KEELSON-INTEGRATION.md §2-3.
+The canonical artifact is ``keelson.Route``; planner-specific data rides in a route ``Extensions``
+entry (``manufacturer: "se.rise"``, ``name: "route-planner"``). See docs/KEELSON-INTEGRATION.md §2-3.
 """
+
+from .serialize import route_from_planned, routes_from_alternatives
+from .store import RouteStore
+
+__all__ = ["RouteStore", "route_from_planned", "routes_from_alternatives"]
