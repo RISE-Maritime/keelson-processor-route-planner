@@ -1,0 +1,100 @@
+"""Entry point: parse args, load config, open zenoh, serve the HTTP API, idle until shutdown.
+
+P1 skeleton: this wires argument parsing, config, the zenoh session, a liveliness token, and a
+FastAPI ``/health`` server (on a background thread), then idles under graceful shutdown. The
+planning RPC queryable, pub/sub publishers, and the chart_adapter / navigability / pathfinding
+engines are filled in across P2–P8 (see docs/ROADMAP.md). Until then the process connects, serves
+health, and stays alive but does no planning.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+
+from . import config as config_mod
+
+logger = logging.getLogger(__name__)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI args: keelson common args + config/realm/entity/source + HTTP bind."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Keelson processor: generate, validate and publish safe voyage-route alternatives "
+            "as keelson.Route artifacts. Voyage planning + validation only — NOT collision "
+            "avoidance, NOT autonomous execution."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    # Adds --log-level, --mode, --connect, --listen (keelson scaffolding).
+    from keelson.scaffolding import add_common_arguments
+
+    add_common_arguments(parser)
+    parser.add_argument("-c", "--config", help="Path to a YAML config file (optional).")
+    parser.add_argument("-r", "--realm", help="Keelson realm / base path (default: rise).")
+    parser.add_argument("-e", "--entity-id", help="Keelson entity id (default: route-planner).")
+    parser.add_argument("-s", "--source-id", help="Keelson source id (default: route-planner/0).")
+    parser.add_argument("--http-host", help="HTTP API bind host (default: 0.0.0.0).")
+    parser.add_argument("--http-port", type=int, help="HTTP API port (default: 8000).")
+    return parser.parse_args(argv)
+
+
+def run(session, conf: dict) -> None:
+    """Declare liveliness, serve the HTTP API, then block until shutdown.
+
+    P1: only the FastAPI ``/health`` app runs. The RoutePlanner RPC queryable, pub/sub
+    publishers, and the planning engines are added in later phases (docs/ROADMAP.md).
+    """
+    from keelson.scaffolding import GracefulShutdown, declare_liveliness_token
+
+    from .api import create_app, serve_in_thread
+
+    realm = conf["realm"]
+    entity_id = conf["entity_id"]
+    source_id = conf["source_id"]
+
+    app = create_app(conf)
+
+    with GracefulShutdown() as shutdown:
+        with declare_liveliness_token(session, realm, entity_id, source_id):
+            server = serve_in_thread(app, conf["http_host"], conf["http_port"])
+            logger.info(
+                "route-planner connected as %s/%s/%s, HTTP API on %s:%s",
+                realm,
+                entity_id,
+                source_id,
+                conf["http_host"],
+                conf["http_port"],
+            )
+            try:
+                # wait() returns True as soon as a shutdown signal arrives, so the loop stays
+                # responsive to SIGINT/SIGTERM rather than sleeping a fixed interval.
+                while not shutdown.wait(1.0):
+                    pass
+            finally:
+                server.shutdown()
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point: parse args, load config, open zenoh, run until shutdown."""
+    args = parse_args(argv)
+
+    from keelson.scaffolding import create_zenoh_config, setup_logging
+
+    setup_logging(level=args.log_level)
+    conf = config_mod.load(args)
+
+    import zenoh
+
+    zconf = create_zenoh_config(mode=args.mode, connect=args.connect, listen=args.listen)
+    session = zenoh.open(zconf)
+    try:
+        run(session, conf)
+    finally:
+        session.close()
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

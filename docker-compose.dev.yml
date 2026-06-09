@@ -1,0 +1,26 @@
+# Dev variant: build locally and run against an ALREADY-RUNNING local keelson/zenoh router,
+# with the FastAPI planning API published on the host at :8000.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#   curl http://localhost:8000/health
+#
+# Uses a bridge network + extra_hosts so host.docker.internal resolves on Linux too (harmless on
+# Docker Desktop). The router must already be listening on the host at tcp/localhost:7447.
+services:
+  route-planner:
+    build:
+      context: .
+      # This machine's Docker bridge can't reach PyPI (DNS/MTU, often a VPN); the host network
+      # can. Build with host networking so `uv pip install` works.
+      network: host
+    init: true # Docker's built-in init (signal forwarding + zombie reaping); replaces tini.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000" # FastAPI planning API
+    environment:
+      CHART_SERVER_URL: ${CHART_SERVER_URL:-http://host.docker.internal:8080}
+      DATABASE_URL: ${DATABASE_URL:-}
+    volumes:
+      - ./config:/config:ro
+    command: ["--connect", "tcp/host.docker.internal:7447", "--http-port", "8000"]

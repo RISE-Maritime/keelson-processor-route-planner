@@ -1,0 +1,28 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+	"name": "Route Planner DevContainer",
+	"image": "mcr.microsoft.com/devcontainers/python:dev-3.14-bookworm",
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {}
+	},
+	"runArgs": [
+		"--network=host",
+		"--privileged",
+		"--name=devcon-rp"
+	],
+	"remoteUser": "root",
+	"postCreateCommand": "curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\"$HOME/.local/bin:$PATH\" && uv pip install --system \".[dev]\"",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"github.vscode-github-actions",
+				"charliermarsh.ruff",
+				"ms-toolsai.jupyter",
+				"Anthropic.claude-code",
+				"streetsidesoftware.code-spell-checker",
+				"ms-azuretools.vscode-docker"
+			]
+		}
+	}
+}

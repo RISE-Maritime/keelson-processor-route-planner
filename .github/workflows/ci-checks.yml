@@ -1,0 +1,45 @@
+name: CI checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linting-bash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run ShellCheck
+        uses: azohra/shell-linter@latest
+
+  linting-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - name: Install ruff
+        run: uv pip install --system ruff
+      - name: Run ruff
+        run: ruff check bin/ src/ tests/
+
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - name: Install dev dependencies
+        run: uv pip install --system ".[dev]"
+      - name: Run pytest
+        run: pytest -v

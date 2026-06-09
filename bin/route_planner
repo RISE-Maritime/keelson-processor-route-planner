@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Thin executable wrapper so the processor can run from bin/ in a container.
+
+Mirrors keelson connector convention (logic lives in the package; bin/ is a launcher).
+Also runs when only the source tree is present (no install) by adding src/ to sys.path.
+"""
+
+import os
+import sys
+
+# Allow running directly from a checkout without installing the package.
+_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+if os.path.isdir(_SRC) and _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
+
+from route_planner.app import main  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main())

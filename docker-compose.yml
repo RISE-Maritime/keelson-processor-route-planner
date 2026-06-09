@@ -1,0 +1,27 @@
+# Runs the route-planner against an ALREADY-RUNNING local keelson/zenoh router.
+# This stack NEVER starts its own router — it connects to the one already listening on the host
+# at tcp/localhost:7447 (reached from inside the container via host.docker.internal).
+#
+# With host networking the FastAPI planning API is reachable directly on the host at :8000.
+# For PostGIS/chart-server wiring in local dev, add this service to chart-server's compose per
+# docs/DESIGN.md §3, or set DATABASE_URL / CHART_SERVER_URL via .env (see .env.example).
+services:
+  route-planner:
+    build:
+      context: .
+      # This machine's Docker *bridge* network can't reach PyPI (DNS/MTU, often a VPN); the host
+      # network can. Build with host networking so `uv pip install` works. Remove if your Docker
+      # bridge has working outbound internet.
+      network: host
+    init: true # Docker's built-in init (signal forwarding + zombie reaping); replaces tini.
+    environment:
+      CHART_SERVER_URL: ${CHART_SERVER_URL:-http://host.docker.internal:8080}
+      DATABASE_URL: ${DATABASE_URL:-}
+    volumes:
+      # Optional: drop a config/route_planner.yaml here and add `--config /config/route_planner.yaml`
+      # to the command below. The skeleton runs on built-in defaults without one.
+      - ./config:/config:ro
+    # network_mode: host — this machine's Docker bridge has MTU/VPN issues (same reason the build
+    # step uses network: host). Also makes the HTTP API reachable on the host at :8000.
+    network_mode: host
+    command: ["--connect", "tcp/host.docker.internal:7447"]
