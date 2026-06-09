@@ -53,6 +53,38 @@ def test_plan_route_e2e_with_fake_adapter():
         session.close()
 
 
+def test_validate_route_e2e_flags_land_crossing():
+    from shapely.geometry import box
+
+    from route_planner.chart_adapter.layers import DEPTH_AREAS, LAND, ChartFeature, NormalizedChart
+
+    # Deep water with a land islet carved out (a hole in depare) the edited route runs through.
+    islet = box(11.83, 57.69, 11.85, 57.73)
+    chart = NormalizedChart()
+    cover = (11.78, 57.68, 11.90, 57.74)
+    chart.add(ChartFeature(DEPTH_AREAS, box(*cover).difference(islet), {"drval1": 10, "drval2": 20}))
+    chart.add(ChartFeature(LAND, islet, {"objnam": "islet"}))
+    chart.provenance.coverage_bbox = cover
+
+    session = zenoh.open(zenoh.Config())
+    publisher = RoutePublisher(session, CONF)
+    queryables = rpc.install_queryables(session, CONF, RouteStore(), FakeAdapter(chart), publisher)
+    try:
+        edited = request_route((57.70, 11.80), (57.70, 11.88))  # crosses the islet at lon ~11.84
+        replies = _ok_routes(session, _rpc_key("validate_route"), edited.SerializeToString())
+        assert replies, "validate_route returned no annotated route"
+        route = replies[0]
+        assert any(i.id == "issue-land" for i in route.issues)
+        from keelson.payloads.Route_pb2 import ROUTE_ISSUES
+
+        assert route.status == ROUTE_ISSUES
+    finally:
+        for q in queryables:
+            q.undeclare()
+        publisher.close()
+        session.close()
+
+
 @pytest.mark.skipif(
     not os.environ.get("DATABASE_URL"),
     reason="no DATABASE_URL; live chart DB not available",

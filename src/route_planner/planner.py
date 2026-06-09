@@ -119,4 +119,26 @@ def run_plan(adapter, request_route):
         optimization_goal=req["optimization_goal"],
         evidence=nav.evidence,
     )
+    from .validation import validate
+
+    for route in routes:
+        validate(route, nav)  # populate issues/challenges/status before reply + publish
     return routes, {"warnings": nav.warnings, "n_alternatives": len(routes)}
+
+
+def run_validate(adapter, request_route):
+    """Re-validate a (possibly manually edited) keelson.Route against fresh navigability.
+
+    Rebuilds the chart/navigability picture from the route's own profile + waypoints (no
+    pathfinding), then annotates the route in place with issues/challenges/status. Returns the route.
+    """
+    from .navigability import build_navigability, nav_params_from_profile
+    from .validation import validate
+
+    req = parse_request(request_route)
+    bbox = corridor_bbox([req["start"], *req["via"], req["end"]])
+    chart = adapter.fetch_corridor(bbox)
+    nav = build_navigability(
+        chart, nav_params_from_profile(req["profile"], req["optimization_goal"], req["constraints"])
+    )
+    return validate(request_route, nav)

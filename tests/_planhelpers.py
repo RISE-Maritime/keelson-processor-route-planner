@@ -23,9 +23,11 @@ PROFILE = {
 COVERAGE = (11.78, 57.68, 11.90, 57.74)  # west, south, east, north
 
 
-def deep_chart() -> NormalizedChart:
+def deep_chart(extra=()) -> NormalizedChart:
     chart = NormalizedChart()
     chart.add(ChartFeature(DEPTH_AREAS, box(*COVERAGE), {"drval1": 10, "drval2": 20}))
+    for feature in extra:
+        chart.add(feature)
     chart.provenance.coverage_bbox = COVERAGE
     return chart
 

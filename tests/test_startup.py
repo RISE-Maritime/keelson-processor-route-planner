@@ -97,8 +97,8 @@ def _install(session, conf, store):
     return queryables, publisher
 
 
-def test_rpc_validate_route_unavailable():
-    """validate_route still replies UNAVAILABLE 'not implemented yet' (its engine is P7)."""
+def test_rpc_validate_route_rejects_empty_request():
+    """validate_route on a request with <2 waypoints -> INVALID_ARGUMENT (it is implemented now)."""
     import keelson
     import zenoh
     from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
@@ -112,10 +112,9 @@ def test_rpc_validate_route_unavailable():
     try:
         queryables, publisher = _install(session, conf, RouteStore())
         try:
-            _oks, errs = _rpc_query(session, key)
+            _oks, errs = _rpc_query(session, key)  # empty Route -> no waypoints
             assert errs, "expected an error reply from validate_route"
-            assert any("not implemented" in e.error_description for e in errs)
-            assert any(e.code == ErrorResponse.UNAVAILABLE for e in errs)
+            assert any(e.code == ErrorResponse.INVALID_ARGUMENT for e in errs)
         finally:
             for q in queryables:
                 q.undeclare()

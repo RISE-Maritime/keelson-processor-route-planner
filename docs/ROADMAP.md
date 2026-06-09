@@ -55,9 +55,15 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
   `RoutePublisher` Envelope-frames pub/sub. Verified live end-to-end over Zenoh RPC: 3 alternatives
   (~3 nm) returned + published in ~3 s. *(`export_vehicle_mission` P9; debug-overlay geojson +
   no-go-from-request deferred.)*
-- [ ] **P7 — Validation engine.** Populate typed `RouteChallenge[]` + `RouteIssue[]`; provenance
-  (chart source/edition, limitations, assumptions, vessel profile, generation time) +
-  edited-after-validation flag. Re-validate after every generation and every manual edit.
+- [x] **P7 — Validation engine.** `validation.validate(route, nav)` checks the route geometry vs the
+  navigability picture and populates the route in place: `RouteIssue(CRITICAL)` per hard-block
+  crossing (a hazard only counts where it is genuinely non-navigable, tolerating the pathfinder's
+  one-cell discretization slack), typed `RouteChallenge(WARNING)` per soft-cost / snapped endpoint /
+  sharp turn, `status=ROUTE_ISSUES` when critical, + a validation summary (`validation_status`,
+  counts, `validated_at`, `edited_after_validation`) on the route-planner `Extensions`. `run_plan`
+  validates every alternative; `validate_route` re-validates an edited route by rebuilding
+  navigability. Verified live: clean plans carry only warnings, a land-crossing edit → critical
+  issues. *(`hazard_zones[]`/no-go echo + bridge clearance + AIS deferred.)*
 - [ ] **P8 — Crowsnest route-editor integration.** "Auto-plan route" action (start/end/via by map
   click), goal + vessel-profile + margin selectors, alternatives picker, load selection into
   `atomEditingRoute`, reuse `useRouteSafetyScan`, publish via `useRouteSync`. Wording guardrails.

@@ -13,7 +13,8 @@ docs/KEELSON-INTEGRATION.md §3):
 - ``get_route`` / ``select_route`` — request carries ``route_id``; reply the stored ``keelson.Route``
   or ``ErrorResponse(NOT_FOUND)``. ``select_route`` advances status + bumps the edition and publishes
   on ``route`` + ``route_status``.
-- ``validate_route`` — replies ``ErrorResponse(UNAVAILABLE)``; its engine is P7.
+- ``validate_route`` — request is a (possibly edited) ``keelson.Route``; rebuilds navigability and
+  replies it annotated with ``issues`` / ``challenges`` / ``status`` (P7).
 
 Framing (matches keelson connectors — bare protobuf, no Envelope on RPC):
 request ``Route.FromString(bytes(query.payload.to_bytes()))``; success ``query.reply(reply_key,
@@ -30,9 +31,6 @@ from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
 logger = logging.getLogger(__name__)
 
 PROCEDURES: tuple[str, ...] = ("plan_route", "validate_route", "get_route", "select_route")
-
-# validate_route's engine is P7.
-_NOT_IMPLEMENTED = {"validate_route": "validation is not implemented yet (see docs/ROADMAP.md P7)"}
 
 
 def _reply_err(query, description: str, code) -> None:
@@ -84,6 +82,26 @@ def _handle_plan_route(query, reply_key, store, adapter, publisher) -> None:
     logger.info("plan_route replied %d alternative(s); warnings=%s", len(routes), meta.get("warnings"))
 
 
+def _handle_validate_route(query, reply_key, adapter) -> None:
+    from ..planner import PlanError, run_validate
+
+    try:
+        request = _request_route(query)
+    except Exception as exc:  # noqa: BLE001
+        _reply_err(query, f"validate_route: cannot parse keelson.Route request: {exc}", ErrorResponse.INVALID_ARGUMENT)
+        return
+    try:
+        route = run_validate(adapter, request)
+    except PlanError as exc:
+        _reply_err(query, f"validate_route: {exc}", ErrorResponse.INVALID_ARGUMENT)
+        return
+    except Exception:  # noqa: BLE001
+        logger.exception("validate_route failed")
+        _reply_err(query, "validate_route: internal validation error", ErrorResponse.INTERNAL)
+        return
+    query.reply(reply_key, route.SerializeToString())
+
+
 def _handle_get_route(query, reply_key, store) -> None:
     _reply_route_id_lookup(query, reply_key, "get_route", store.get)
 
@@ -129,12 +147,12 @@ def _make_callback(procedure: str, reply_key: str, store, adapter, publisher):
         try:
             if procedure == "plan_route":
                 _handle_plan_route(query, reply_key, store, adapter, publisher)
+            elif procedure == "validate_route":
+                _handle_validate_route(query, reply_key, adapter)
             elif procedure == "get_route":
                 _handle_get_route(query, reply_key, store)
-            elif procedure == "select_route":
+            else:  # select_route
                 _handle_select_route(query, reply_key, store, publisher)
-            else:  # validate_route
-                _reply_err(query, f"route-planner: {_NOT_IMPLEMENTED[procedure]}", ErrorResponse.UNAVAILABLE)
         except Exception:  # noqa: BLE001
             logger.exception("RPC handler failed for %s", reply_key)
             _reply_err(query, "route-planner: internal error", ErrorResponse.INTERNAL)

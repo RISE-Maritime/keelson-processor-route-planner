@@ -58,6 +58,7 @@ class NavigabilityResult:
     navigable: BaseGeometry
     blocked: BaseGeometry
     soft_costs: list = field(default_factory=list)
+    hard_blocks: dict = field(default_factory=dict)  # component name -> metric geometry (for validation)
     evidence: dict = field(default_factory=dict)
     warnings: list = field(default_factory=list)
     projection: geo.Projection | None = None
@@ -196,10 +197,24 @@ def build_navigability(
             "no_go": len(no_go),
         },
     }
+    # Per-component hard-block geometry (for validation to attribute crossings); union is `blocked`.
+    hard_blocks = {
+        name: geom
+        for name, geom in {
+            "land": land_block,
+            "unsafe_depth": shallow,
+            "hazards": hazard_block,
+            "restricted": restricted_block,
+            "no_go": nogo_union,
+            "unknown": unknown if conservative else None,
+        }.items()
+        if geom is not None and not geom.is_empty
+    }
     return NavigabilityResult(
         navigable=navigable,
         blocked=_or_empty(blocked),
         soft_costs=soft_costs,
+        hard_blocks=hard_blocks,
         evidence=evidence,
         warnings=warnings,
         projection=proj,
