@@ -30,8 +30,14 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
   (shallow-but-legal, outside-fairway, near-land-margin, poor-chart-quality, restricted, unknown).
   Pure Shapely/pyproj. Verified live over the Göteborg corridor (≈15 km² navigable of a 48 km²
   box). *(Turn penalty → P4; AIS/weather → P11.)*
-- [ ] **P4 — Pathfinding.** Water grid (or triangulation) + **A\*** (Dijkstra fallback); via-point
-  segmentation; weighted cost; N alternatives. Hard constraints enforced before cost optimization.
+- [x] **P4 — Pathfinding.** `plan(nav, start, end, via, goal, n)` rasterizes the P3 navigable polygon
+  + soft-costs to a metric `CostGrid`, runs **A\*** (heapq, 8-connected; Dijkstra fallback) through
+  each via-segment, snaps endpoints to navigable water, weights soft-costs by `optimization_goal`,
+  and returns N diverse alternatives (corridor-penalty re-runs) as internal `PlannedRoute`s
+  (waypoints + metrics + cost breakdown). Hard constraints enforced before cost (off-water cells are
+  `inf`). numpy + `shapely.contains_xy`; no networkx/scipy. Verified live: 3 distinct safe routes
+  (~3 nm) through the Göteborg corridor in ~0.6 s. *(→ keelson.Route serialization is P5; RPC wiring
+  P6; turn-penalty-in-search + AIS/weather P11.)*
 - [ ] **P5 — Serialize → `keelson.Route`.** Map waypoints/legs/profile/goal/validation/no-go to the
   proto; planner-specific metrics/evidence/cost-weights into an `Extensions` entry. See
   [KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md).
