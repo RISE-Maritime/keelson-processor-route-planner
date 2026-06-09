@@ -17,10 +17,12 @@ HTTP** — plus a pub/sub publication layer. It runs on our backend as a Docker 
 > flag. See [docs/DESIGN.md](docs/DESIGN.md#12-safety--provenance-rule). Mind the UI wording
 > guardrails in DESIGN §10.
 
-**Status:** P1 skeleton. The repo is scaffolded as a keelson processor and runs: it connects to
-Zenoh, declares a liveliness token (the health signal), and declares the RoutePlanner RPC
-queryables (each replies "not implemented yet") under graceful shutdown. No planning logic yet. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan (P0–P12).
+**Status:** P1–P6 done — **planning works end-to-end over Zenoh RPC.** `plan_route` runs
+chart_adapter → navigability → pathfinding → `keelson.Route` serialization, stores + publishes each
+alternative on `route_planned`, and multi-replies one `keelson.Route` per alternative (clients query
+with `consolidation=NONE`); `select_route` publishes `route` + `route_status`; `get_route` reads the
+in-memory store. `validate_route` still replies `UNAVAILABLE` (P7). Verified live against the
+chart-server. Next: P7 validation, P8 Crowsnest UI. See [docs/ROADMAP.md](docs/ROADMAP.md) (P0–P12).
 
 ## Where to look first
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phases P0–P12, the MVP slice (P1–P8), optimization goals.

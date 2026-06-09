@@ -48,15 +48,20 @@ def run(session, conf: dict) -> None:
     """
     from keelson.scaffolding import GracefulShutdown, declare_liveliness_token
 
+    from .chart_adapter import ChartAdapter
+    from .publish import RoutePublisher
+
     realm = conf["realm"]
     entity_id = conf["entity_id"]
     source_id = conf["source_id"]
 
     store = RouteStore()
+    adapter = ChartAdapter(conf)  # lazy I/O — no DB/HTTP connection until plan_route runs
+    publisher = RoutePublisher(session, conf)
 
     with GracefulShutdown() as shutdown:
         with declare_liveliness_token(session, realm, entity_id, source_id):
-            queryables = rpc.install_queryables(session, conf, store)
+            queryables = rpc.install_queryables(session, conf, store, adapter, publisher)
             logger.info(
                 "route-planner connected as %s/%s/%s, %d RPC queryable(s) declared",
                 realm,
@@ -72,6 +77,8 @@ def run(session, conf: dict) -> None:
             finally:
                 for q in queryables:
                     q.undeclare()
+                publisher.close()
+                adapter.close()
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -47,10 +47,14 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
   (`challenges`/`issues`) + `hazard_zones` left for P7. Verified live: adapter→nav→plan→serialize
   emits valid `keelson.Route` alternatives (~1.8 KB each, full provenance). See
   [KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md) §2.
-- [ ] **P6 — Keelson integration.** `RoutePlanner` RPC queryable (`plan_route`/`validate_route`/
-  `get_route`/`select_route`/`export_vehicle_mission`); publish `route_planned`/`route` +
-  `RouteStatusUpdate` on `route_status`. Optional debug overlays on `navigable_waters_geojson` /
-  `no_go_zone_geojson`.
+- [x] **P6 — Keelson integration.** `plan_route` runs the full pipeline (`planner.run_plan`:
+  chart_adapter → navigability → pathfinding → serialize), stores + publishes each alternative on
+  `route_planned`, and **multi-replies** one `keelson.Route` per alternative (clients query with
+  `consolidation=NONE`). `select_route` publishes the chosen `route` + a `RouteStatusUpdate` on
+  `route_status`; `get_route` reads the store; `validate_route` stays `UNAVAILABLE` (P7).
+  `RoutePublisher` Envelope-frames pub/sub. Verified live end-to-end over Zenoh RPC: 3 alternatives
+  (~3 nm) returned + published in ~3 s. *(`export_vehicle_mission` P9; debug-overlay geojson +
+  no-go-from-request deferred.)*
 - [ ] **P7 — Validation engine.** Populate typed `RouteChallenge[]` + `RouteIssue[]`; provenance
   (chart source/edition, limitations, assumptions, vessel profile, generation time) +
   edited-after-validation flag. Re-validate after every generation and every manual edit.

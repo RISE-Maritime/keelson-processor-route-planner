@@ -106,10 +106,13 @@ phase):
 
 `plan_route` returning multiple alternatives uses Zenoh's native **multi-reply** (the queryable
 calls `query.reply(...)` once per alternative) rather than a wrapper `PlanRouteResponse` message.
+Because the alternatives all reply on the same key, **clients must query with
+`consolidation=NONE`** or Zenoh collapses them to a single (latest) reply. Each alternative is also
+published on `route_planned` (§5) and stored, so `get_route` can fetch any by id afterwards.
 
-> **P1 status.** `get_route` / `select_route` are wired to the in-memory store (return `NOT_FOUND`
-> until a planner or a test seeds it). `plan_route` / `validate_route` reply
-> `ErrorResponse(UNAVAILABLE, "…not implemented yet")` — their engines are P2-P4 / P7. Typed
+> **Status (P6).** `plan_route` runs the full pipeline and replies/stores/publishes alternatives;
+> `select_route` publishes the chosen `route` + a `RouteStatusUpdate` on `route_status`; `get_route`
+> reads the store. `validate_route` replies `ErrorResponse(UNAVAILABLE)` — its engine is P7. Typed
 > `keelson.Route` requires the **monorepo** SDK (the PyPI `keelson==0.5.x` wheel lacks
 > `payloads.Route_pb2`).
 

@@ -86,8 +86,19 @@ def _rpc_query(session, key, payload=None):
     return oks, errs
 
 
-def test_rpc_plan_route_unavailable():
-    """End-to-end: plan_route replies UNAVAILABLE 'not implemented yet' over a peer session."""
+def _install(session, conf, store):
+    """install_queryables with a fake adapter + a real publisher (P6 signature)."""
+    from _planhelpers import FakeAdapter, deep_chart
+
+    from route_planner.publish import RoutePublisher
+
+    publisher = RoutePublisher(session, conf)
+    queryables = rpc.install_queryables(session, conf, store, FakeAdapter(deep_chart()), publisher)
+    return queryables, publisher
+
+
+def test_rpc_validate_route_unavailable():
+    """validate_route still replies UNAVAILABLE 'not implemented yet' (its engine is P7)."""
     import keelson
     import zenoh
     from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
@@ -95,19 +106,20 @@ def test_rpc_plan_route_unavailable():
     from route_planner.model.store import RouteStore
 
     conf = config_mod.load(None)
-    key = keelson.construct_rpc_key(conf["realm"], conf["entity_id"], "plan_route", conf["source_id"])
+    key = keelson.construct_rpc_key(conf["realm"], conf["entity_id"], "validate_route", conf["source_id"])
 
     session = zenoh.open(zenoh.Config())
     try:
-        queryables = rpc.install_queryables(session, conf, RouteStore())
+        queryables, publisher = _install(session, conf, RouteStore())
         try:
             _oks, errs = _rpc_query(session, key)
-            assert errs, "expected an error reply from plan_route"
+            assert errs, "expected an error reply from validate_route"
             assert any("not implemented" in e.error_description for e in errs)
             assert any(e.code == ErrorResponse.UNAVAILABLE for e in errs)
         finally:
             for q in queryables:
                 q.undeclare()
+            publisher.close()
     finally:
         session.close()
 
@@ -127,7 +139,7 @@ def test_rpc_get_route_not_found_then_seeded():
 
     session = zenoh.open(zenoh.Config())
     try:
-        queryables = rpc.install_queryables(session, conf, store)
+        queryables, publisher = _install(session, conf, store)
         try:
             # unknown id -> NOT_FOUND
             req_missing = Route(route_id="ghost").SerializeToString()
@@ -146,5 +158,6 @@ def test_rpc_get_route_not_found_then_seeded():
         finally:
             for q in queryables:
                 q.undeclare()
+            publisher.close()
     finally:
         session.close()
