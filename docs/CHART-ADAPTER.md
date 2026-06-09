@@ -11,11 +11,15 @@ S-57 features; it contains **no planning logic**. Verified against
 
 | Path | When | Mechanism |
 |------|------|-----------|
-| **Direct PostGIS** (default for bulk) | Building navigable polygons over a route corridor — large feature pulls | `asyncpg` to `postgresql://charts:charts@postgis:5432/charts` (in-network) or `localhost:5433` (host). Read-only `charts` role. |
-| **chart-server HTTP / Zenoh** (targeted) | Point/area checks, depth summary, clearance envelope, provenance | nginx `:8080/api/*` (HTTP) or the `chart/**` Zenoh queryable. |
+| **Direct PostGIS** (default for bulk) | Building navigable polygons over a route corridor — large feature pulls | **`psycopg3`** (sync, pooled) to `postgresql://charts:charts@postgis:5432/charts` (in-network) or `localhost:5433` (host). |
+| **chart-server HTTP** (targeted) | Point/area checks, depth summary, clearance envelope, provenance | **`httpx`** (sync) to nginx `:8080/api/*`. (The `chart/**` Zenoh queryable is an equivalent transport Crowsnest uses; the planner could call it via its own session, but uses HTTP here.) |
 
 **Invariant:** the adapter **never writes `public.*`** — ENC data must remain reproducible from
-the source `.000` cells.
+the source `.000` cells. It issues **SELECTs only**.
+
+> **Stack.** The adapter is **synchronous** (`psycopg3` + `httpx`) to match the sync, thread-per-
+> queryable RPC service — the `plan_route` zenoh handler calls it directly, no event loop. (The
+> chart-server *itself* is aiohttp/asyncpg; that is its server stack, not the adapter's client.)
 
 ---
 

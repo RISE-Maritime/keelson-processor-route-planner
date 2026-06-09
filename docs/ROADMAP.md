@@ -17,9 +17,11 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
   in-memory route store backs `get_route`/`select_route`. `plan_route`/`validate_route` reply
   `UNAVAILABLE` pending their engines (P2-P4 / P7). *(Keelson RPC is the only transport — no HTTP.
   Requires the keelson monorepo SDK for `payloads.Route_pb2`.)*
-- [ ] **P2 — `chart_adapter`.** Direct-PostGIS bulk reads for corridor feature pulls + chart-server
-  HTTP/`zenoh` for targeted checks (`grounding-line`, `depth`, `catalog`). Normalize S-57 → internal
-  layers. See [CHART-ADAPTER.md](CHART-ADAPTER.md). No planning logic in this module.
+- [x] **P2 — `chart_adapter`.** Direct-PostGIS bulk reads for corridor feature pulls (sync
+  `psycopg3`, SELECT-only over `edits.effective_<layer>`) + chart-server HTTP (sync `httpx`) for
+  targeted checks (`identify`, `depth`, `grounding-line`, `catalog`). Normalizes S-57 → internal
+  layers as Shapely `ChartFeature`s grouped in a `NormalizedChart` (+ provenance). No planning
+  logic. See [CHART-ADAPTER.md](CHART-ADAPTER.md). *(Not wired into `plan_route` yet — that's P4.)*
 - [ ] **P3 — `navigability_engine`.** Navigable/blocked polygons + risk/cost surface from features +
   vessel profile + safety depth + margin + mode + no-go. Hard-block vs. soft-cost split.
 - [ ] **P4 — Pathfinding.** Water grid (or triangulation) + **A\*** (Dijkstra fallback); via-point
