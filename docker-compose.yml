@@ -2,9 +2,9 @@
 # This stack NEVER starts its own router — it connects to the one already listening on the host
 # at tcp/localhost:7447 (reached from inside the container via host.docker.internal).
 #
-# With host networking the FastAPI planning API is reachable directly on the host at :8000.
-# For PostGIS/chart-server wiring in local dev, add this service to chart-server's compose per
-# docs/DESIGN.md §3, or set DATABASE_URL / CHART_SERVER_URL via .env (see .env.example).
+# The planner is reached over Keelson RPC through that router (no HTTP port). For PostGIS/chart-
+# server wiring in local dev, add this service to chart-server's compose per docs/DESIGN.md §3,
+# or set DATABASE_URL / CHART_SERVER_URL via .env (see .env.example).
 services:
   route-planner:
     build:
@@ -22,6 +22,6 @@ services:
       # to the command below. The skeleton runs on built-in defaults without one.
       - ./config:/config:ro
     # network_mode: host — this machine's Docker bridge has MTU/VPN issues (same reason the build
-    # step uses network: host). Also makes the HTTP API reachable on the host at :8000.
+    # step uses network: host), and lets the container reach the host router directly.
     network_mode: host
     command: ["--connect", "tcp/host.docker.internal:7447"]

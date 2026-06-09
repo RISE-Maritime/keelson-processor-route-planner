@@ -1,10 +1,10 @@
-"""Entry point: parse args, load config, open zenoh, serve the HTTP API, idle until shutdown.
+"""Entry point: parse args, load config, open zenoh, declare RPC queryables, idle until shutdown.
 
-P1 skeleton: this wires argument parsing, config, the zenoh session, a liveliness token, and a
-FastAPI ``/health`` server (on a background thread), then idles under graceful shutdown. The
-planning RPC queryable, pub/sub publishers, and the chart_adapter / navigability / pathfinding
-engines are filled in across P2–P8 (see docs/ROADMAP.md). Until then the process connects, serves
-health, and stays alive but does no planning.
+P1 skeleton: this wires argument parsing, config, the zenoh session, a liveliness token (the
+keelson-native health signal), and the ``RoutePlanner`` RPC queryables, then idles under graceful
+shutdown. Each queryable replies "not implemented yet" until the chart_adapter / navigability /
+pathfinding engines and pub/sub publishers are filled in across P2-P8 (see docs/ROADMAP.md). The
+sole integration transport is Keelson RPC - there is no HTTP layer.
 """
 
 from __future__ import annotations
@@ -13,17 +13,19 @@ import argparse
 import logging
 
 from . import config as config_mod
+from . import rpc
+from .model.store import RouteStore
 
 logger = logging.getLogger(__name__)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse CLI args: keelson common args + config/realm/entity/source + HTTP bind."""
+    """Parse CLI args: keelson common args + config / realm / entity / source."""
     parser = argparse.ArgumentParser(
         description=(
             "Keelson processor: generate, validate and publish safe voyage-route alternatives "
-            "as keelson.Route artifacts. Voyage planning + validation only — NOT collision "
-            "avoidance, NOT autonomous execution."
+            "as keelson.Route artifacts over Keelson RPC. Voyage planning + validation only - "
+            "NOT collision avoidance, NOT autonomous execution."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -35,37 +37,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-r", "--realm", help="Keelson realm / base path (default: rise).")
     parser.add_argument("-e", "--entity-id", help="Keelson entity id (default: route-planner).")
     parser.add_argument("-s", "--source-id", help="Keelson source id (default: route-planner/0).")
-    parser.add_argument("--http-host", help="HTTP API bind host (default: 0.0.0.0).")
-    parser.add_argument("--http-port", type=int, help="HTTP API port (default: 8000).")
     return parser.parse_args(argv)
 
 
 def run(session, conf: dict) -> None:
-    """Declare liveliness, serve the HTTP API, then block until shutdown.
+    """Declare the liveliness token + RoutePlanner RPC queryables, then block until shutdown.
 
-    P1: only the FastAPI ``/health`` app runs. The RoutePlanner RPC queryable, pub/sub
-    publishers, and the planning engines are added in later phases (docs/ROADMAP.md).
+    P1: the queryables reply "not implemented yet". The planning engines and pub/sub publishers are
+    added in later phases (docs/ROADMAP.md).
     """
     from keelson.scaffolding import GracefulShutdown, declare_liveliness_token
-
-    from .api import create_app, serve_in_thread
 
     realm = conf["realm"]
     entity_id = conf["entity_id"]
     source_id = conf["source_id"]
 
-    app = create_app(conf)
+    store = RouteStore()
 
     with GracefulShutdown() as shutdown:
         with declare_liveliness_token(session, realm, entity_id, source_id):
-            server = serve_in_thread(app, conf["http_host"], conf["http_port"])
+            queryables = rpc.install_queryables(session, conf, store)
             logger.info(
-                "route-planner connected as %s/%s/%s, HTTP API on %s:%s",
+                "route-planner connected as %s/%s/%s, %d RPC queryable(s) declared",
                 realm,
                 entity_id,
                 source_id,
-                conf["http_host"],
-                conf["http_port"],
+                len(queryables),
             )
             try:
                 # wait() returns True as soon as a shutdown signal arrives, so the loop stays
@@ -73,7 +70,8 @@ def run(session, conf: dict) -> None:
                 while not shutdown.wait(1.0):
                     pass
             finally:
-                server.shutdown()
+                for q in queryables:
+                    q.undeclare()
 
 
 def main(argv: list[str] | None = None) -> int:

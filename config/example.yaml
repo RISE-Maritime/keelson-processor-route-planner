@@ -1,7 +1,7 @@
 # Example runtime config for keelson-processor-route-planner.
 #
 # All fields are optional. Precedence (lowest to highest): built-in defaults < this file
-# (--config) < CLI flags (--realm / --entity-id / --source-id / --http-host / --http-port).
+# (--config) < CLI flags (--realm / --entity-id / --source-id).
 # Copy to config/route_planner.yaml and edit, or pass with `--config`.
 #
 # Deployment URLs come from the environment, NOT this file (see .env.example):
@@ -10,7 +10,4 @@
 
 realm: rise                # keelson realm / base path
 entity_id: route-planner   # keelson entity id
-source_id: route-planner/0 # keelson source id
-
-http_host: 0.0.0.0         # FastAPI planning API bind host
-http_port: 8000            # FastAPI planning API port
+source_id: route-planner/0 # keelson source id (also the RPC responder id)

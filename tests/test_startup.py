@@ -1,7 +1,8 @@
-"""Startup smoke tests for the P1 skeleton.
+"""Startup smoke tests for the P1 skeleton (RPC-only).
 
-Exercise the parts that need no live Zenoh session: package import, CLI parsing, config assembly
-(defaults / file / CLI overrides), and the FastAPI /health endpoint.
+Exercise the parts that need no router: package import, CLI parsing, config assembly
+(defaults / file / CLI overrides), the RPC procedure registry + key-space, and an end-to-end
+self-query against the declared queryables over a local peer Zenoh session.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import pytest
 import route_planner
 from route_planner import app as app_mod
 from route_planner import config as config_mod
-from route_planner.api import create_app
+from route_planner import rpc
 
 
 def test_package_version():
@@ -32,8 +33,6 @@ def test_config_defaults():
     assert conf["realm"] == "rise"
     assert conf["entity_id"] == "route-planner"
     assert conf["source_id"] == "route-planner/0"
-    assert conf["http_host"] == "0.0.0.0"
-    assert conf["http_port"] == 8000
     assert conf["chart_server_url"]  # a default is always present
 
 
@@ -43,12 +42,10 @@ def test_config_cli_overrides():
         realm="other",
         entity_id="rp2",
         source_id="rp2/9",
-        http_host="127.0.0.1",
-        http_port=9001,
     )
     conf = config_mod.load(args)
     assert conf["realm"] == "other"
-    assert conf["http_port"] == 9001
+    assert conf["source_id"] == "rp2/9"
 
 
 def test_config_example_file_loads():
@@ -56,21 +53,98 @@ def test_config_example_file_loads():
     args = types.SimpleNamespace(config=str(example))
     conf = config_mod.load(args)
     assert conf["realm"] == "rise"
-    assert conf["http_port"] == 8000
+    assert conf["source_id"] == "route-planner/0"
 
 
-def test_config_rejects_bad_port():
-    args = types.SimpleNamespace(config=None, http_port="not-an-int")
+def test_config_rejects_empty_realm():
+    args = types.SimpleNamespace(config=None, realm="")
     with pytest.raises(config_mod.ConfigError):
         config_mod.load(args)
 
 
-def test_health_endpoint():
-    from fastapi.testclient import TestClient
+def test_rpc_procedures_and_keyspace():
+    import keelson
 
-    client = TestClient(create_app(config_mod.load(None)))
-    resp = client.get("/health")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "ok"
-    assert body["service"] == "route-planner"
+    assert rpc.PROCEDURES == ("plan_route", "validate_route", "get_route", "select_route")
+    key = keelson.construct_rpc_key("rise", "route-planner", "plan_route", "route-planner/0")
+    assert key == "rise/@v0/route-planner/@rpc/plan_route/route-planner/0"
+
+
+def _rpc_query(session, key, payload=None):
+    """Run a one-shot RPC query; return (ok_payloads: list[bytes], errors: list[ErrorResponse])."""
+    from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
+
+    oks, errs = [], []
+    kwargs = {} if payload is None else {"payload": payload}
+    for reply in session.get(key, **kwargs):
+        if reply.ok is not None:
+            oks.append(bytes(reply.ok.payload.to_bytes()))
+        elif reply.err is not None:
+            err = ErrorResponse()
+            err.ParseFromString(bytes(reply.err.payload.to_bytes()))
+            errs.append(err)
+    return oks, errs
+
+
+def test_rpc_plan_route_unavailable():
+    """End-to-end: plan_route replies UNAVAILABLE 'not implemented yet' over a peer session."""
+    import keelson
+    import zenoh
+    from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
+
+    from route_planner.model.store import RouteStore
+
+    conf = config_mod.load(None)
+    key = keelson.construct_rpc_key(conf["realm"], conf["entity_id"], "plan_route", conf["source_id"])
+
+    session = zenoh.open(zenoh.Config())
+    try:
+        queryables = rpc.install_queryables(session, conf, RouteStore())
+        try:
+            _oks, errs = _rpc_query(session, key)
+            assert errs, "expected an error reply from plan_route"
+            assert any("not implemented" in e.error_description for e in errs)
+            assert any(e.code == ErrorResponse.UNAVAILABLE for e in errs)
+        finally:
+            for q in queryables:
+                q.undeclare()
+    finally:
+        session.close()
+
+
+def test_rpc_get_route_not_found_then_seeded():
+    """get_route returns NOT_FOUND for an unknown id, and the stored Route once seeded."""
+    import keelson
+    import zenoh
+    from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
+    from keelson.payloads.Route_pb2 import RECOMMENDED, Route
+
+    from route_planner.model.store import RouteStore
+
+    conf = config_mod.load(None)
+    key = keelson.construct_rpc_key(conf["realm"], conf["entity_id"], "get_route", conf["source_id"])
+    store = RouteStore()
+
+    session = zenoh.open(zenoh.Config())
+    try:
+        queryables = rpc.install_queryables(session, conf, store)
+        try:
+            # unknown id -> NOT_FOUND
+            req_missing = Route(route_id="ghost").SerializeToString()
+            oks, errs = _rpc_query(session, key, payload=req_missing)
+            assert not oks
+            assert any(e.code == ErrorResponse.NOT_FOUND for e in errs)
+
+            # seed the store, then the same query returns the Route
+            store.put(Route(route_id="r1", status=RECOMMENDED, route_edition_number=1))
+            oks, errs = _rpc_query(session, key, payload=Route(route_id="r1").SerializeToString())
+            assert oks, f"expected the stored Route, got errors: {[e.error_description for e in errs]}"
+            got = Route()
+            got.ParseFromString(oks[0])
+            assert got.route_id == "r1"
+            assert got.status == RECOMMENDED
+        finally:
+            for q in queryables:
+                q.undeclare()
+    finally:
+        session.close()

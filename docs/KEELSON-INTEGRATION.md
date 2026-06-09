@@ -85,47 +85,33 @@ genuinely can't carry it."
 
 ---
 
-## 3. Proposed `RoutePlanner` RPC interface
+## 3. `RoutePlanner` RPC interface — `keelson.Route` is the contract
 
 Route planning is request/response, so a Keelson **queryable** (not a stream) is the right fit.
-Sketch (vendor it inside this repo first as `proto/RoutePlanner.proto`; upstream to
-`keelson/interfaces/RoutePlanner.proto` once stable):
+**We do not vendor a `RoutePlanner.proto`.** keelson's own protobufs are the canonical, primary
+definitions: every procedure's request and response is a `keelson.Route` (plus `ErrorResponse` for
+errors). Planner inputs that have no native `Route`/`RouteInfo` home ride in a route `Extensions`
+entry. (This also sidesteps a hard blocker: the `Route.proto` *source* isn't distributed — only the
+generated `Route_pb2` in the monorepo SDK — so a wrapper proto importing it can't be compiled.)
 
-```proto
-syntax = "proto3";
-package keelson;
-import "payloads/Route.proto";
-import "interfaces/VehicleMission.proto";   // for export_vehicle_mission
-import "foxglove/LocationFix.proto";
+The four procedures (keys `…/@rpc/{procedure}/{source_id}`; `export_vehicle_mission` is a later
+phase):
 
-message PlanRouteRequest {
-  foxglove.LocationFix start = 1;
-  foxglove.LocationFix end = 2;
-  repeated foxglove.LocationFix via = 3;
-  RouteInfo vessel_constraints = 4;          // reuse RouteInfo's vessel_* + limit fields
-  string optimization_goal = 5;              // shortest|fastest|safest|archipelago_conservative|...
-  map<string, bool> constraints = 6;         // avoid_traffic, prefer_fairways, allow_unknown_depth, ...
-  uint32 return_alternatives = 7;
-}
+| Procedure | Request (bare protobuf) | Reply(ies) |
+|---|---|---|
+| `plan_route` | a `keelson.Route` **template**: start/end/via as `Waypoints.waypoint[]` positions; vessel constraints in `RouteInfo`; planner-only inputs (`optimization_goal`, margin, turn radius, UKC, preferred speed, `avoid_*`/`prefer_*`, `return_alternatives`) in an `Extensions.Entry` (`manufacturer="se.rise"`, `name="route-planner"`, `attributes` map). | **one `keelson.Route` per alternative** (Zenoh multi-reply): best `status=RECOMMENDED`, rest `PLANNED`. |
+| `validate_route` | a `keelson.Route` to check. | the same `keelson.Route` with `challenges[]` / `issues[]` populated. |
+| `get_route` | a `keelson.Route` carrying `route_id`. | the stored `keelson.Route`, or `ErrorResponse(NOT_FOUND)`. |
+| `select_route` | a `keelson.Route` carrying `route_id`. | the stored `keelson.Route` with `status` advanced + `route_edition_number` bumped (and, P6, published). |
 
-message PlanRouteResponse {
-  repeated Route alternatives = 1;           // best = RECOMMENDED, rest = PLANNED
-  string request_id = 2;
-}
+`plan_route` returning multiple alternatives uses Zenoh's native **multi-reply** (the queryable
+calls `query.reply(...)` once per alternative) rather than a wrapper `PlanRouteResponse` message.
 
-message ValidateRouteResponse { Route route = 1; }   // route with challenges/issues populated
-message SelectRouteRequest    { string route_id = 1; }
-message SelectRouteResponse   { Route route = 1; }    // status advanced; published
-message GetRouteRequest       { string route_id = 1; }
-
-service RoutePlanner {
-  rpc plan_route(PlanRouteRequest)     returns (PlanRouteResponse);
-  rpc validate_route(Route)            returns (ValidateRouteResponse);
-  rpc get_route(GetRouteRequest)       returns (Route);
-  rpc select_route(SelectRouteRequest) returns (SelectRouteResponse);
-  rpc export_vehicle_mission(Route)    returns (Mission);   // later phase; export only
-}
-```
+> **P1 status.** `get_route` / `select_route` are wired to the in-memory store (return `NOT_FOUND`
+> until a planner or a test seeds it). `plan_route` / `validate_route` reply
+> `ErrorResponse(UNAVAILABLE, "…not implemented yet")` — their engines are P2-P4 / P7. Typed
+> `keelson.Route` requires the **monorepo** SDK (the PyPI `keelson==0.5.x` wheel lacks
+> `payloads.Route_pb2`).
 
 ---
 
@@ -145,27 +131,40 @@ rpc_key = keelson.construct_rpc_key(base_path, entity_id, "plan_route", responde
 # e.g. rise/@v0/landkrabba_two/@rpc/plan_route/route_planner_0
 ```
 
-Framing — every payload is a protobuf inside a Keelson `Envelope`:
+Framing — **pub/sub** payloads are Envelope-framed (`enclose`/`uncover`); **RPC** requests and
+replies are **bare protobuf, no Envelope**, matching the keelson connectors
+(`connectors/{mavlink,mcap}`, `keelson-processor-supervisor/bin/rpcs.py`):
 
 ```python
-# publish
+# pub/sub — Envelope-framed
 session.declare_publisher(pub_key).put(keelson.enclose(route.SerializeToString()))
 
-# rpc responder
+# rpc responder — bare protobuf; reply takes (key, bytes); errors go on the error channel
 def on_plan(query):
     req = PlanRouteRequest.FromString(bytes(query.payload.to_bytes()))
-    resp = plan(req)                      # → PlanRouteResponse
-    query.reply(keelson.enclose(resp.SerializeToString()))
-session.declare_queryable(rpc_key, on_plan)
+    try:
+        resp = plan(req)                              # → PlanRouteResponse
+        query.reply(rpc_key, resp.SerializeToString())
+    except Exception as exc:
+        query.reply_err(ErrorResponse(error_description=str(exc)).SerializeToString())
+session.declare_queryable(rpc_key, on_plan, complete=True)
 
-# rpc client
-reply = session.get(rpc_key, payload=keelson.enclose(req.SerializeToString()))
-_recv, _enc, body = keelson.uncover(reply.payload)        # (received_ns, enclosed_ns, payload)
-resp = PlanRouteResponse.FromString(body)
+# rpc client — request + reply are bare protobuf
+for reply in session.get(rpc_key, payload=req.SerializeToString()):
+    if reply.ok is not None:
+        resp = PlanRouteResponse.FromString(bytes(reply.ok.payload.to_bytes()))
+    else:                                              # ErrorResponse on the error channel
+        err = ErrorResponse.FromString(bytes(reply.err.payload.to_bytes()))
 ```
 
-Zenoh session opens in `client` mode toward the Keelson router (`tcp/…:7447`), matching the
-chart-server query-bridge convention.
+`ErrorResponse` is `keelson.interfaces.ErrorResponse_pb2.ErrorResponse`. Zenoh session opens in
+`client` mode toward the Keelson router (`tcp/…:7447`), matching the chart-server query-bridge
+convention.
+
+> **SDK note.** Typed `keelson.Route` / `PlanRouteResponse` (de)serialization needs the keelson
+> **monorepo** SDK — the pinned PyPI `keelson==0.5.1` wheel ships `construct_rpc_key` and
+> `ErrorResponse` but **not** `payloads.Route_pb2`. Switch the dependency before P5
+> (e.g. `uv pip install ../keelson/sdks/python`).
 
 ---
 

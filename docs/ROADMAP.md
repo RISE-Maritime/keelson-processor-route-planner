@@ -9,8 +9,14 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
 - [x] **P0 — Repo inspection + design note.** Inspected chart-server, Keelson, Crowsnest; confirmed
   `keelson.Route`, the chart-server query surface, and the existing Crowsnest route-editor /
   safety-scan. Captured in this `docs/` set.
-- [ ] **P1 — FastAPI skeleton + contracts.** Service scaffold (Keelson-connector layout); vessel
-  profile model; `POST /api/routes/plan` request/response; in-memory route store; health endpoint.
+- [x] **P1 — RPC skeleton + contracts.** Service scaffold (Keelson-connector layout); `RoutePlanner`
+  RPC queryable (`plan_route`/`validate_route`/`get_route`/`select_route`); liveliness-based health.
+  Contracts use **`keelson.Route` as the canonical type** (keelson protos primary — no parallel
+  proto): the vessel profile maps to `RouteInfo` + a `route-planner` `Extensions` entry; the
+  `plan_route` request is a `keelson.Route` template, responses are `keelson.Route` (multi-reply);
+  in-memory route store backs `get_route`/`select_route`. `plan_route`/`validate_route` reply
+  `UNAVAILABLE` pending their engines (P2-P4 / P7). *(Keelson RPC is the only transport — no HTTP.
+  Requires the keelson monorepo SDK for `payloads.Route_pb2`.)*
 - [ ] **P2 — `chart_adapter`.** Direct-PostGIS bulk reads for corridor feature pulls + chart-server
   HTTP/`zenoh` for targeted checks (`grounding-line`, `depth`, `catalog`). Normalize S-57 → internal
   layers. See [CHART-ADAPTER.md](CHART-ADAPTER.md). No planning logic in this module.

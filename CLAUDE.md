@@ -6,9 +6,9 @@ Guidance for Claude Code (and humans) working in this repo. Keep it current.
 
 A **keelson processor**: a long-running Python service that generates safe, scored **voyage-route
 alternatives** for archipelago navigation, validates them against S-57 chart data, and emits them
-as standard `keelson.Route` artifacts over keelson RPC + pub/sub. It exposes a **FastAPI HTTP API**
-(direct/testing use) and a **keelson RoutePlanner RPC queryable** (the path Crowsnest uses), plus a
-pub/sub publication layer. It runs on our backend as a Docker container.
+as standard `keelson.Route` artifacts over keelson RPC + pub/sub. Its request/response transport is
+a **keelson RoutePlanner RPC queryable** (the path Crowsnest uses) — **the only transport, no
+HTTP** — plus a pub/sub publication layer. It runs on our backend as a Docker container.
 
 > **Scope & safety.** Voyage planning + validation only — **NOT** real-time COLREG collision
 > avoidance and **NOT** autonomous execution / autopilot control. A generated route is never
@@ -18,8 +18,9 @@ pub/sub publication layer. It runs on our backend as a Docker container.
 > guardrails in DESIGN §10.
 
 **Status:** P1 skeleton. The repo is scaffolded as a keelson processor and runs: it connects to
-Zenoh, declares a liveliness token, serves `GET /health`, and idles under graceful shutdown. No
-planning logic yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan (P0–P12).
+Zenoh, declares a liveliness token (the health signal), and declares the RoutePlanner RPC
+queryables (each replies "not implemented yet") under graceful shutdown. No planning logic yet. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan (P0–P12).
 
 ## Where to look first
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phases P0–P12, the MVP slice (P1–P8), optimization goals.
@@ -31,7 +32,7 @@ planning logic yet. See [docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan (P
 ## Architecture (target shape)
 
 ```
-Crowsnest route-editor ──"Auto-plan"──▶ RoutePlanner RPC (rpc/) ─┐   HTTP: api/ (POST /api/routes/plan…)
+Crowsnest route-editor ──"Auto-plan" (Keelson RPC)──▶ RoutePlanner queryable (rpc/)
                                                                  ▼
         chart_adapter/ ──▶ navigability/ ──▶ pathfinding/ (A*) ──▶ model/ (→ keelson.Route)
             │ (S-57 fetch+normalize)   (cost surface)    │                    │
@@ -40,39 +41,45 @@ Crowsnest route-editor ──"Auto-plan"──▶ RoutePlanner RPC (rpc/) ─┐
 ```
 
 Source lives under `src/route_planner/`; `bin/route_planner` is a thin wrapper that calls
-`route_planner.app:main`. Subpackages (`api`, `rpc`, `chart_adapter`, `navigability`,
-`pathfinding`, `model`, `validation`, `publish`) map 1:1 to the phases in ROADMAP — most are empty
-stubs today.
+`route_planner.app:main`. Subpackages (`rpc`, `chart_adapter`, `navigability`, `pathfinding`,
+`model`, `validation`, `publish`) map 1:1 to the phases in ROADMAP — most are empty stubs today.
+`rpc/` is the integration layer (declares the queryables); there is no HTTP `api/`.
 
 ## Common commands
 ```bash
-# Install (editable, with dev tools). If keelson==0.5.1 won't resolve, install it from the
-# monorepo first: uv pip install ../keelson/sdks/python
-uv pip install -e ".[dev]"
+# Install. keelson MUST come from the monorepo SDK (the PyPI wheel lacks payloads.Route_pb2,
+# our canonical contract type). Install it first, then our package:
+uv pip install ../keelson/sdks/python   # monorepo keelson (Route_pb2 ✓)
+uv pip install -e ".[dev]"              # our pkg + ruff/pytest (keelson already satisfied)
 
-# Run locally against a router (built-in defaults: realm=rise, entity=route-planner, http :8000)
+# Run locally against a router (built-in defaults: realm=rise, entity=route-planner)
 route_planner --connect tcp/localhost:7447
-curl http://localhost:8000/health
+# declares a liveliness token + the RoutePlanner RPC queryables; query one with a keelson RPC
+# client at e.g. rise/@v0/route-planner/@rpc/plan_route/route-planner/0 (skeleton: replies error)
 
 # Lint / test
 ruff check bin/ src/ tests/
 pytest
 
-# Local container against an already-running host router, HTTP published on :8000
+# Local container against an already-running host router
 docker compose -f docker-compose.dev.yml up --build
 ```
 
 ## Keelson integration cheatsheet (reuse the SDK — do not reinvent)
 - Scaffolding (`keelson.scaffolding`): `add_common_arguments`, `create_zenoh_config`,
-  `setup_logging`, `GracefulShutdown`, `declare_liveliness_token`, `LivelinessMonitor`,
-  `make_configurable` (RPC config). Already used in `app.py`.
+  `setup_logging`, `GracefulShutdown`, `declare_liveliness_token` (all wired in `app.py`); plus
+  `LivelinessMonitor` and `make_configurable` (runtime RPC config) available for later phases.
 - Keys: `construct_pubsub_key(realm, entity_id, subject, source_id, …)`, `construct_rpc_key(...)`,
   `construct_liveliness_key(...)`. Key-space hardcodes `/@v0/`.
-- Framing: `enclose` / `uncover` for the Envelope; `get_subject_schema` +
-  `decode_protobuf_payload_from_type_name` to decode payloads.
+- Framing: **pub/sub** is Envelope-framed (`enclose`/`uncover`; `get_subject_schema` +
+  `decode_protobuf_payload_from_type_name`). **RPC is bare protobuf, no Envelope** — parse with
+  `Msg.FromString(bytes(query.payload.to_bytes()))`, reply `query.reply(key, msg.SerializeToString())`,
+  error `query.reply_err(ErrorResponse(error_description=...).SerializeToString())`. See `rpc/`.
 - **Adopt `keelson.Route`** (RTZ-1.2 / S-421 superset) as the canonical artifact — do NOT invent
   parallel `voyage_route` / `route_geojson` protobufs. Planner-specific data goes in a route
-  `Extensions` entry (`manufacturer: "se.rise"`, `name: "route-planner"`).
+  `Extensions` entry (`manufacturer: "se.rise"`, `name: "route-planner"`). `keelson.Route` is the
+  **canonical RPC contract** (request + response; see docs/KEELSON-INTEGRATION.md §3) — it needs the
+  keelson **monorepo** SDK, since the PyPI wheel lacks `payloads.Route_pb2`.
 
 Reference upstream files (read-only, in sibling repos):
 - `/Users/ted/Documents/CODE/keelson/messages/payloads/Route.proto` — the route/voyage model.

@@ -29,8 +29,8 @@ standard `keelson.Route` artifacts for operator review and (optionally) mission 
 
 ## Architecture in one paragraph
 
-A standalone Python service (Keelson-connector style) exposing **two integration layers** — a
-**Planning API** (FastAPI HTTP + a Keelson RPC queryable) and a **publication layer** (Keelson
+A standalone Python service (Keelson-connector style) exposing a **Planning API** (a Keelson RPC
+queryable — request/response, the only transport; **no HTTP**) and a **publication layer** (Keelson
 pub/sub). A `chart_adapter` fetches and normalizes S-57 features from the chart server (bulk reads
 direct from PostGIS, targeted checks over the chart server's HTTP/`zenoh` API). A
 `navigability_engine` turns those features + the vessel profile into navigable/blocked polygons and
@@ -46,7 +46,7 @@ after manual edits.
                                                            │
         ┌──────────────────────────────────────────────────────────────┐
         │  keelson-processor-route-planner                              │
-        │   Planning API (FastAPI HTTP + Keelson RPC queryable)         │
+        │   Planning API (Keelson RPC queryable)                       │
         │      │                                                        │
         │      ▼                                                        │
         │   chart_adapter ──▶ navigability_engine ──▶ pathfinder (A*)   │
@@ -65,27 +65,33 @@ after manual edits.
 - **Adopt `keelson.Route`** as the canonical model (extend Keelson only on a real gap).
 - **Extend the Crowsnest `route-editor`** with auto-plan — no parallel UI.
 - **Status: P1 skeleton.** The service is scaffolded as a keelson processor and runs — it connects
-  to Zenoh, declares a liveliness token, serves `GET /health`, and idles. No planning logic yet;
-  the engines arrive across P2–P8 (see [docs/ROADMAP.md](docs/ROADMAP.md)).
+  to Zenoh, declares a liveliness token, and declares the RoutePlanner RPC queryables (each replies
+  "not implemented yet"). No planning logic yet; the engines arrive across P2–P8 (see
+  [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Quick start
 
-Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/). If `keelson==0.5.1` won't resolve from
-your index, install it from the monorepo first: `uv pip install ../keelson/sdks/python`.
+Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/). **keelson must be installed from the
+monorepo SDK** — the canonical contract type `keelson.Route` (`payloads.Route_pb2`) is not in the
+PyPI wheel.
 
 ```bash
-# Setup (editable, with dev tools)
+# Setup. Install keelson from the monorepo first (Route_pb2), then our package + dev tools.
+uv pip install ../keelson/sdks/python
 uv pip install -e ".[dev]"
 
-# Run against a local keelson/zenoh router (defaults: realm=rise, entity=route-planner, http :8000)
+# Run against a local keelson/zenoh router (defaults: realm=rise, entity=route-planner)
 route_planner --connect tcp/localhost:7447
-curl http://localhost:8000/health        # -> {"status":"ok","service":"route-planner",...}
+# On start it declares a liveliness token (the health signal) and the RoutePlanner RPC
+# queryables (plan_route / validate_route / get_route / select_route). In the skeleton each
+# replies "not implemented yet"; query one with any keelson RPC client, e.g. the key
+#   rise/@v0/route-planner/@rpc/plan_route/route-planner/0
 
 # Lint + test
 ruff check bin/ src/ tests/
 pytest
 
-# Dev container against an already-running host router (HTTP published on :8000)
+# Dev container against an already-running host router
 docker compose -f docker-compose.dev.yml up --build
 ```
 

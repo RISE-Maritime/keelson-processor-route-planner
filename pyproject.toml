@@ -11,10 +11,12 @@ license = "Apache-2.0"
 requires-python = ">=3.13"
 authors = [{ name = "RISE Maritime" }]
 dependencies = [
-    "keelson==0.5.1",
+    # keelson MUST be installed from the monorepo SDK (/Users/ted/Documents/CODE/keelson/sdks/python):
+    # the canonical contract is keelson.Route, and the PyPI wheel (0.5.1 / 0.5.2) does NOT ship
+    # payloads.Route_pb2 (the generated *_pb2 are gitignored, regenerated only at release). Install
+    # it first, then `uv pip install -e ".[dev]"` (see README/CONTRIBUTING).
+    "keelson",
     "eclipse-zenoh>=1.2.1",
-    "fastapi>=0.110",
-    "uvicorn>=0.29",
     "shapely>=2.0",
     "pyproj>=3.6",
     "pyyaml>=6.0",
@@ -28,7 +30,6 @@ dependencies = [
 dev = [
     "ruff>=0.6",
     "pytest>=8",
-    "httpx>=0.27",   # FastAPI TestClient for /health smoke tests
 ]
 
 [project.scripts]

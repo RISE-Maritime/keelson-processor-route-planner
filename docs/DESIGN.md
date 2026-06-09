@@ -63,10 +63,9 @@ A standalone Python service following the Keelson-connector layout:
 ```
 keelson-processor-route-planner/
 ├── bin/
-│   └── route_planner            # main executable (argparse CLI; FastAPI + Keelson session)
+│   └── route_planner            # main executable (argparse CLI; Keelson RPC + session)
 ├── route_planner/
-│   ├── api/                     # FastAPI routes (HTTP planning API)
-│   ├── rpc/                     # Keelson queryable handlers (RoutePlanner RPC)
+│   ├── rpc/                     # Keelson queryable handlers (RoutePlanner RPC — only transport)
 │   ├── chart_adapter/           # fetch + normalize S-57 (NO planning logic)
 │   ├── navigability/            # navigable/blocked polygons + cost surface
 │   ├── pathfinding/             # graph build + A* / Dijkstra + via segmentation
@@ -75,36 +74,37 @@ keelson-processor-route-planner/
 │   └── publish/                 # Keelson pub/sub
 ├── tests/                       # pytest (unit + e2e against a live Zenoh session)
 ├── pyproject.toml
-├── requirements.txt             # keelson, fastapi, uvicorn, asyncpg, shapely, networkx/scipy, ...
+├── requirements.txt             # keelson, eclipse-zenoh, asyncpg, shapely, networkx/scipy, ...
 └── Dockerfile                   # vendored Keelson SDK, connector base image
 ```
 
 Two integration layers:
 
-- **Planning API** — request/response, so both HTTP and Keelson RPC fit naturally:
-  - HTTP: `POST /api/routes/plan`, `POST /api/routes/{id}/validate`, `POST /api/routes/{id}/select`,
-    `GET /api/routes/{id}`, `GET /api/routes/{id}/geojson`, `GET|POST /api/vessel-profiles`.
-  - Keelson RPC queryable: `plan_route`, `validate_route`, `get_route`, `select_route`,
-    `export_vehicle_mission`.
+- **Planning API** — request/response over a **Keelson RPC queryable** (the only transport; no
+  HTTP): `plan_route`, `validate_route`, `get_route`, `select_route`, `export_vehicle_mission`.
 - **Publication layer** — Keelson pub/sub: proposed/selected `keelson.Route` on
   `route_planned` / `route`; `RouteStatusUpdate` on `route_status`; optional debug overlays on the
   existing `navigable_waters_geojson` / `no_go_zone_geojson` subjects.
 
 **Runtime config (CLI / env):** `--realm` (base path), `--entity-id`, `--source-id`, Zenoh
-`--connect tcp/host:7447`, `DATABASE_URL` (PostGIS), `CHART_SERVER_URL` (HTTP fallback).
+`--connect tcp/host:7447`, `DATABASE_URL` (PostGIS), `CHART_SERVER_URL` (chart-server HTTP, used by
+the chart_adapter). Health/liveness is the process's Keelson **liveliness token** (no HTTP probe).
 
 **Local-dev wiring:** add a `route-planner` service to chart-server's `docker-compose.yml`
 (`depends_on: postgis healthy`, `ZENOH_CONNECT=tcp/host.docker.internal:7447`,
-`DATABASE_URL=postgresql://charts:charts@postgis:5432/charts`); optional nginx
-`location /api/routes/` proxy. Crowsnest should prefer the **Zenoh RPC** path (matches its existing
-transport); the HTTP API is for direct/testing use.
+`DATABASE_URL=postgresql://charts:charts@postgis:5432/charts`). Crowsnest calls the planner over the
+**Zenoh RPC** path, matching its existing transport (the SharedWorker `chart-server` bridge).
 
 ---
 
 ## 4. Planning request & response (API contract)
 
-The request mirrors the brief; the response returns `keelson.Route` alternatives (rendered to JSON
-over HTTP, protobuf over RPC). Indicative request:
+The request mirrors the brief; the response returns `keelson.Route` alternatives (protobuf over the
+Keelson RPC queryable). On the wire the request is itself a **`keelson.Route` template** — start/end/
+via map to `Waypoints.waypoint[]`, the vessel profile to `RouteInfo`, and the planner-only fields
+(`optimization_goal`, margin, turn radius, UKC, `constraints`, `return_alternatives`) to a
+`route-planner` `Extensions` entry. The indicative JSON below is just a readable view of those
+inputs (see [KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md) §3 for the mapping):
 
 ```json
 {
@@ -126,9 +126,9 @@ over HTTP, protobuf over RPC). Indicative request:
 ```
 
 Each alternative is a `keelson.Route` (see the field-by-field mapping in
-[KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md)). The HTTP `geojson` endpoint derives a
-`LineString` / `FeatureCollection` from the route's waypoints for quick visualization; Crowsnest
-consumes the `keelson.Route` directly and renders geometry itself.
+[KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md)). Crowsnest consumes the `keelson.Route` directly
+and derives line geometry (`LineString` / `FeatureCollection`) from its waypoints itself — there is
+no geojson endpoint.
 
 ---
 

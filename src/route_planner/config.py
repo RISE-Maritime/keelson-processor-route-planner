@@ -16,13 +16,11 @@ logger = logging.getLogger(__name__)
 DEFAULTS: dict = {
     "realm": "rise",  # keelson realm / base path
     "entity_id": "route-planner",
-    "source_id": "route-planner/0",
-    "http_host": "0.0.0.0",  # FastAPI planning API bind host
-    "http_port": 8000,  # FastAPI planning API port
+    "source_id": "route-planner/0",  # also the RPC responder id
 }
 
 # CLI flags that, when supplied, override the file/defaults. argparse dests match these names.
-_CLI_OVERRIDES = ("realm", "entity_id", "source_id", "http_host", "http_port")
+_CLI_OVERRIDES = ("realm", "entity_id", "source_id")
 
 
 class ConfigError(ValueError):
@@ -31,11 +29,9 @@ class ConfigError(ValueError):
 
 def _validate(conf: dict) -> None:
     """Validate required fields and types. Raises ConfigError on the first problem."""
-    for key in ("realm", "entity_id", "source_id", "http_host"):
+    for key in ("realm", "entity_id", "source_id"):
         if not isinstance(conf.get(key), str) or not conf[key]:
             raise ConfigError(f"config field {key!r} must be a non-empty string")
-    if not isinstance(conf.get("http_port"), int):
-        raise ConfigError("config field 'http_port' must be an integer")
 
 
 def load(args=None) -> dict:
@@ -64,12 +60,10 @@ def load(args=None) -> dict:
 
     _validate(conf)
     logger.info(
-        "Config: realm=%s entity_id=%s source_id=%s http=%s:%s chart_server=%s",
+        "Config: realm=%s entity_id=%s source_id=%s chart_server=%s",
         conf["realm"],
         conf["entity_id"],
         conf["source_id"],
-        conf["http_host"],
-        conf["http_port"],
         conf["chart_server_url"],
     )
     return conf
