@@ -172,6 +172,15 @@ Geometry handled with Shapely (buffering, polygon difference, containment). The 
 can be cross-checked against chart-server's `/api/grounding-line` for consistency with the chart's
 own contour logic.
 
+**Implementation notes (P3).** The engine works in a **local metric CRS** (pyproj AEQD centred on
+the corridor) so margins/clearances are real metres; the projection is carried in the result for P4
+(grid) and final waypoint export. Output is **geometry, not a raster** — a `navigable` polygon, a
+`blocked` polygon, and a list of weighted `SoftCost` regions the pathfinder samples. Navigable water
+is taken **positively** from charted deep depth-areas (real islands are holes in `depare`), and a
+corridor spanning multiple ENC scales is deconflicted **finest-scale-wins** so coarse cells never
+override finer detail. Unknown-depth (uncharted) water is hard-blocked in conservative mode, else a
+soft-cost.
+
 ---
 
 ## 7. Pathfinding

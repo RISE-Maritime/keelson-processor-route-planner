@@ -22,8 +22,14 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
   targeted checks (`identify`, `depth`, `grounding-line`, `catalog`). Normalizes S-57 → internal
   layers as Shapely `ChartFeature`s grouped in a `NormalizedChart` (+ provenance). No planning
   logic. See [CHART-ADAPTER.md](CHART-ADAPTER.md). *(Not wired into `plan_route` yet — that's P4.)*
-- [ ] **P3 — `navigability_engine`.** Navigable/blocked polygons + risk/cost surface from features +
-  vessel profile + safety depth + margin + mode + no-go. Hard-block vs. soft-cost split.
+- [x] **P3 — `navigability_engine`.** `build_navigability(chart, NavParams, no_go)` → navigable/
+  blocked polygons + weighted `SoftCost` regions + evidence/warnings, in a local metric CRS
+  (pyproj AEQD) carried to P4. Positive-water model (navigable taken from charted deep depth-areas)
+  with **finest-scale-wins** deconfliction so coarse ENC cells don't override fine detail; hard-block
+  (land/unsafe-depth/hazards/entry-prohibited/no-go/unknown-in-conservative) vs. soft-cost
+  (shallow-but-legal, outside-fairway, near-land-margin, poor-chart-quality, restricted, unknown).
+  Pure Shapely/pyproj. Verified live over the Göteborg corridor (≈15 km² navigable of a 48 km²
+  box). *(Turn penalty → P4; AIS/weather → P11.)*
 - [ ] **P4 — Pathfinding.** Water grid (or triangulation) + **A\*** (Dijkstra fallback); via-point
   segmentation; weighted cost; N alternatives. Hard constraints enforced before cost optimization.
 - [ ] **P5 — Serialize → `keelson.Route`.** Map waypoints/legs/profile/goal/validation/no-go to the
