@@ -1,7 +1,8 @@
 """Plan orchestration — the glue from a plan_route request to keelson.Route alternatives.
 
-`run_plan(adapter, request_route)` parses the request `keelson.Route` template (per
-docs/KEELSON-INTEGRATION.md §3), computes a corridor, and runs the P2-P5 pipeline:
+`run_plan(adapter, request)` parses a `route_planner/v1` `PlanRouteRequest` (keelson
+interfaces/RoutePlanner.proto; docs/KEELSON-INTEGRATION.md §3), computes a corridor, and runs the
+P2-P5 pipeline:
 chart_adapter → navigability → pathfinding → serialize. Heavy imports are lazy so importing this
 module stays cheap; the chart_adapter is the only I/O (the rest is pure geometry).
 """
@@ -18,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 class PlanError(ValueError):
     """A malformed plan_route request (maps to ErrorResponse INVALID_ARGUMENT)."""
+
+
+class PlanUnsupported(PlanError):
+    """A well-formed request the planner cannot serve (maps to ErrorResponse UNSUPPORTED)."""
 
 
 def _f(value, default=None):
@@ -45,56 +50,96 @@ def corridor_bbox(points_ll, pad_m: float = 2000.0):
     return (min(lons) - d_lon, min(lats) - d_lat, max(lons) + d_lon, max(lats) + d_lat)
 
 
-def _planner_extension(route):
-    from .model.vessel_profile import EXTENSION_NAME, MANUFACTURER
+def _constraints(entry) -> dict:
+    """The ``constraint.*`` booleans of the route-planner extension entry."""
+    from .model.vessel_profile import CONSTRAINT_PREFIX
 
-    for entry in route.extensions.entries:
-        if entry.manufacturer == MANUFACTURER and entry.name == EXTENSION_NAME:
-            return entry
-    return None
-
-
-def parse_request(request_route):
-    """Extract (start, end, via, profile, optimization_goal, constraints, n_alternatives)."""
-    from .model import vessel_profile
-
-    waypoints = [
-        lat_lon(wp.position)
-        for wp in request_route.waypoints.waypoint
-    ]
-    if len(waypoints) < 2:
-        raise PlanError("plan_route request keelson.Route must carry >= 2 waypoints (start..end)")
-
-    profile = vessel_profile.profile_from_route(request_route)
-    optimization_goal = request_route.info.optimization_method or "shortest"
-
-    constraints: dict = {}
-    n_alternatives = 1
-    entry = _planner_extension(request_route)
-    if entry is not None:
-        for key, value in entry.attributes.items():
-            if key.startswith("constraint."):
-                constraints[key[len("constraint."):]] = _to_bool(value)
-        n_alternatives = max(1, int(_f(entry.attributes.get("return_alternatives"), 1) or 1))
-
+    if entry is None:
+        return {}
     return {
-        "start": waypoints[0],
-        "end": waypoints[-1],
-        "via": waypoints[1:-1],
-        "profile": profile,
-        "optimization_goal": optimization_goal,
-        "constraints": constraints,
-        "n_alternatives": n_alternatives,
+        key[len(CONSTRAINT_PREFIX):]: _to_bool(value)
+        for key, value in entry.attributes.items()
+        if key.startswith(CONSTRAINT_PREFIX)
     }
 
 
-def run_plan(adapter, request_route):
-    """Run the full pipeline for a plan_route request; return (list[keelson.Route], meta)."""
+def _known_goal(label: str) -> str:
+    from .pathfinding.cost import WEIGHT_PROFILES
+
+    if label not in WEIGHT_PROFILES:
+        # An unknown label would silently fall back to the default weights (cost.weights_for):
+        # the failure mode the closed OptimizationGoal enum exists to prevent.
+        raise PlanError(f"unknown optimization goal {label!r}; known: {sorted(WEIGHT_PROFILES)}")
+    return label
+
+
+def _split(points: list) -> dict:
+    return {"start": points[0], "end": points[-1], "via": points[1:-1]}
+
+
+def parse_plan_request(request) -> dict:
+    """Extract the planning inputs from a ``route_planner/v1`` ``PlanRouteRequest``.
+
+    Returns start/end/via, profile, optimization_goal (a cost-profile label), constraints and
+    n_alternatives. Raises ``PlanError`` (INVALID_ARGUMENT) or ``PlanUnsupported`` (UNSUPPORTED).
+    """
+    from keelson.payloads.Route_pb2 import ROUTE_TOPOLOGY_CLOSED
+
+    from .model import vessel_profile
+
+    points = [lat_lon(c) for c in request.waypoints]
+    if len(points) < 2:
+        raise PlanError("PlanRouteRequest must carry >= 2 waypoints (departure .. destination)")
+    if request.topology == ROUTE_TOPOLOGY_CLOSED:
+        raise PlanUnsupported("closed (circuit) routes are not supported by this planner")
+
+    entry = vessel_profile.planner_entry(request.extensions)
+    goal = vessel_profile.goal_label(request.goal)
+    if entry is not None and entry.attributes.get(vessel_profile.GOAL_ATTRIBUTE):
+        if goal is not None:
+            raise PlanError("goal set both in PlanRouteRequest.goal and the planner extension")
+        goal = entry.attributes[vessel_profile.GOAL_ATTRIBUTE]
+
+    return {
+        **_split(points),
+        "profile": vessel_profile.profile_from_parts(request.constraints, request.extensions),
+        "optimization_goal": _known_goal(goal or "shortest"),
+        "constraints": _constraints(entry),
+        # 0 means "the planner's own default", which is one alternative.
+        "n_alternatives": max(1, int(request.max_alternatives)),
+    }
+
+
+def route_context(route) -> dict:
+    """The planning context of an existing ``keelson.Route`` (for validate_route).
+
+    The goal is the one the route was planned for (``RouteInfo.optimization_method``), and the
+    profile/constraints come from its own info + planner extension.
+    """
+    from .model import vessel_profile
+
+    points = [lat_lon(wp.position) for wp in route.waypoints.waypoint]
+    if len(points) < 2:
+        raise PlanError("validate_route: the keelson.Route must carry >= 2 waypoints")
+    return {
+        **_split(points),
+        "profile": vessel_profile.profile_from_route(route),
+        "optimization_goal": route.info.optimization_method or "shortest",
+        "constraints": _constraints(vessel_profile.planner_entry(route.extensions)),
+    }
+
+
+def run_plan(adapter, request):
+    """Run the full pipeline for a ``PlanRouteRequest``; return (list[keelson.Route], meta).
+
+    Never more than ``max_alternatives`` routes: the interface says a planner MUST NOT reply with
+    more than the caller asked for.
+    """
     from .model import serialize
     from .navigability import build_navigability, nav_params_from_profile
     from .pathfinding import plan as pathfind
 
-    req = parse_request(request_route)
+    req = parse_plan_request(request)
     bbox = corridor_bbox([req["start"], *req["via"], req["end"]])
     logger.info(
         "plan_route: %s -> %s (%d via) goal=%s alts=%d corridor=%s",
@@ -116,7 +161,7 @@ def run_plan(adapter, request_route):
         preferred_speed_kn=_f(req["profile"].get("preferred_speed_kn")),
     )
     routes = serialize.routes_from_alternatives(
-        planned,
+        planned[: req["n_alternatives"]],
         profile=req["profile"],
         optimization_goal=req["optimization_goal"],
         evidence=nav.evidence,
@@ -153,7 +198,7 @@ def run_validate(adapter, request_route):
     from .navigability import build_navigability, nav_params_from_profile
     from .validation import validate
 
-    req = parse_request(request_route)
+    req = route_context(request_route)
     bbox = corridor_bbox([req["start"], *req["via"], req["end"]])
     chart = adapter.fetch_corridor(bbox)
     nav = build_navigability(

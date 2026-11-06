@@ -112,10 +112,10 @@ def test_sharp_turn_challenge():
 
 
 def test_run_plan_routes_are_validated():
-    from _planhelpers import FakeAdapter, deep_chart, request_route
+    from _planhelpers import FakeAdapter, deep_chart, plan_request
 
     from route_planner.planner import run_plan
 
-    routes, _meta = run_plan(FakeAdapter(deep_chart()), request_route((57.70, 11.80), (57.72, 11.86)))
+    routes, _meta = run_plan(FakeAdapter(deep_chart()), plan_request((57.70, 11.80), (57.72, 11.86)))
     assert routes
     assert "validation_status" in _attrs(routes[0])

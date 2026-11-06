@@ -1,9 +1,10 @@
 # Keelson Integration
 
 How the route planner speaks Keelson: the canonical `keelson.Route` model, the planner→Route field
-mapping, the proposed `RoutePlanner` RPC interface, the key-space, and the publication subjects.
-Verified against `keelson/messages/payloads/Route.proto`, `keelson/messages/subjects.yaml`, and
-`keelson/sdks/python/keelson/` (SDK v0.5.1).
+mapping, the `route_planner/v1` RPC interface, the key-space, and the publication subjects.
+Verified against keelson `0.6.0-pre.19` (PyPI `keelson==0.6.0rc19`, pinned exactly in
+`pyproject.toml`): `messages/payloads/Route.proto`, `interfaces/RoutePlanner.proto`,
+`messages/subjects.yaml` and protocol-specification.md §3, §6.3, §6.4 and §6.7.
 
 ---
 
@@ -85,112 +86,119 @@ genuinely can't carry it."
 
 ---
 
-## 3. `RoutePlanner` RPC interface — `keelson.Route` is the contract
+## 3. `route_planner/v1` RPC interface
 
-Route planning is request/response, so a Keelson **queryable** (not a stream) is the right fit.
-**We do not vendor a `RoutePlanner.proto`.** keelson's own protobufs are the canonical, primary
-definitions: every procedure's request and response is a `keelson.Route` (plus `ErrorResponse` for
-errors). Planner inputs that have no native `Route`/`RouteInfo` home ride in a route `Extensions`
-entry. (This also sidesteps a hard blocker: the `Route.proto` *source* isn't distributed — only the
-generated `Route_pb2` in the monorepo SDK — so a wrapper proto importing it can't be compiled.)
-
-The four procedures (keys `…/@rpc/{procedure}/{source_id}`; `export_vehicle_mission` is a later
-phase):
+Route planning is request/response, so a Keelson **queryable** (not a stream) is the right fit. The
+contract is keelson's own **`interfaces/RoutePlanner.proto`**, registered in keelson's
+`interfaces.yaml` as **`route_planner/v1`**; protocol-specification.md §6.7 states the three
+properties the proto cannot (below). The planner serves it with `keelson.scaffolding.serve_rpc`
+(`rpc/__init__.py`), which declares one queryable per procedure, the interface-level liveliness
+token, audit logging, and a typed `INTERNAL` reply if a handler raises.
 
 | Procedure | Request (bare protobuf) | Reply(ies) |
 |---|---|---|
-| `plan_route` | a `keelson.Route` **template**: start/end/via as `Waypoints.waypoint[]` positions; vessel constraints in `RouteInfo`; planner-only inputs (`optimization_goal`, margin, turn radius, UKC, preferred speed, `avoid_*`/`prefer_*`, `return_alternatives`) in an `Extensions.Entry` (`manufacturer="se.rise"`, `name="route-planner"`, `attributes` map). | **one `keelson.Route` per alternative** (Zenoh multi-reply): best `status=RECOMMENDED`, rest `PLANNED`. |
-| `validate_route` | a `keelson.Route` to check. | the same `keelson.Route` with `challenges[]` / `issues[]` populated. |
-| `get_route` | a `keelson.Route` carrying `route_id`. | the stored `keelson.Route`, or `ErrorResponse(NOT_FOUND)`. |
-| `select_route` | a `keelson.Route` carrying `route_id`. | the stored `keelson.Route` with `status` advanced + `route_edition_number` bumped (and, P6, published). |
+| `plan_route` | `PlanRouteRequest`: ordered `waypoints` (`keelson.Coordinate`; first = departure, last = destination, between = via-points), vessel `constraints` (`RouteInfo`), a typed `goal` (`OptimizationGoal`), `max_alternatives` (0 = planner default, one), `topology`, and `extensions`. | **one `keelson.Route` per alternative** (Zenoh multi-reply), never more than `max_alternatives`: best `status=RECOMMENDED`, rest `PLANNED`. |
+| `validate_route` | a `keelson.Route` to check. | the same `keelson.Route` with `challenges[]` / `issues[]` / `status` populated. |
+| `get_route` | `keelson.RouteRef` (`route_id` + `route_edition_number`). | that exact edition, or `ErrorResponse(NOT_FOUND)`. A dangling edition is never resolved to the latest. |
+| `select_route` | `keelson.RouteRef` of the route's latest edition. | a **new edition** with `status` advanced (`ACKNOWLEDGED`); the selected edition is kept unchanged. |
 
-`plan_route` returning multiple alternatives uses Zenoh's native **multi-reply** (the queryable
-calls `query.reply(...)` once per alternative) rather than a wrapper `PlanRouteResponse` message.
-Because the alternatives all reply on the same key, **clients must query with
-`consolidation=NONE`** or Zenoh collapses them to a single (latest) reply. Each alternative is also
-published on `route_planned` (§5) and stored, so `get_route` can fetch any by id afterwards.
+The three properties the proto cannot carry:
 
-> **Status (P6).** `plan_route` runs the full pipeline and replies/stores/publishes alternatives;
-> `select_route` publishes the chosen `route` + a `RouteStatusUpdate` on `route_status`; `get_route`
-> reads the store. `validate_route` replies `ErrorResponse(UNAVAILABLE)` — its engine is P7. Typed
-> `keelson.Route` requires the **monorepo** SDK (the PyPI `keelson==0.5.x` wheel lacks
-> `payloads.Route_pb2`).
+* **`plan_route` is a multi-reply.** The handler replies once per alternative on the same key, not a
+  list message, so **clients must query with `consolidation=NONE`** or Zenoh collapses the set to
+  one reply. Each alternative is also stored and published on `route` (§5), so `get_route` can
+  fetch any of them afterwards.
+* **Requests and replies are bare protobuf**, not Envelope-wrapped.
+* **`select_route` mutates.** It bumps an edition, so it runs the §6.4 choreography (§5 below) — the
+  reply is not the whole effect.
+
+**Planner-only inputs** ride in `PlanRouteRequest.extensions` as one `Extensions.Entry`
+(`manufacturer="se.rise"`, `name="route-planner"`, string `attributes`): preferred speed, UKC,
+route margin, turn radius, the `constraint.*` booleans (`avoid_*` / `prefer_*`), and `goal` — a cost
+profile keelson's enum deliberately does not name (`pilot_matched`, `usv_trial_safe`, `custom`).
+Each `OptimizationGoal` maps to the planner cost profile of the same name
+(`OPTIMIZATION_GOAL_SAFEST` → `safest`); `UNSPECIFIED` means `shortest`. An unknown extension goal
+is refused rather than silently falling back to the default weights.
+
+**Errors** are typed `ErrorResponse.Code`s:
+
+| Code | When |
+|---|---|
+| `INVALID_ARGUMENT` | unparseable request; fewer than two waypoints; a `RouteRef` without an edition; an unknown extension goal, or a goal given twice |
+| `UNSUPPORTED` | `topology = CLOSED` — the planner does not plan circuits |
+| `UNAVAILABLE` | no navigable route found for the request |
+| `NOT_FOUND` | unknown route id, or an edition that is not stored |
+| `INVALID_STATE` | `select_route` on an edition that is no longer the latest |
+| `INTERNAL` | anything else (from `serve_rpc`'s dispatcher) |
 
 ---
 
-## 4. Key-space (corrected) & framing
+## 4. Key-space & framing
 
-Keelson **hardcodes `/@v0/`** — there is no major-version variable. Always build keys with the SDK
-helpers; never hand-format.
+Always build keys with the SDK helpers; never hand-format.
 
 ```python
 import keelson
 
-# pub/sub: {base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}[/@target/{target_id}]
-pub_key = keelson.construct_pubsub_key(base_path, entity_id, "route_planned", source_id)
+# pub/sub: {base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}
+edition_key = keelson.construct_pubsub_key(base_path, entity_id, "route", f"{route_id}/edition/{n}")
 
-# rpc:     {base_path}/@v0/{entity_id}/@rpc/{procedure}/{responder_id}
-rpc_key = keelson.construct_rpc_key(base_path, entity_id, "plan_route", responder_id)
-# e.g. rise/@v0/landkrabba_two/@rpc/plan_route/route_planner_0
+# rpc:     {base_path}/@v0/{entity_id}/@rpc/{interface}/{version}/{procedure}/{responder_id}
+rpc_key = keelson.construct_rpc_key(base_path, entity_id, "route_planner", "v1", "plan_route", source_id)
+# e.g. rise/@v0/route-planner/@rpc/route_planner/v1/plan_route/route-planner/0
 ```
 
 Framing — **pub/sub** payloads are Envelope-framed (`enclose`/`uncover`); **RPC** requests and
-replies are **bare protobuf, no Envelope**, matching the keelson connectors
-(`connectors/{mavlink,mcap}`, `keelson-processor-supervisor/bin/rpcs.py`):
+replies are **bare protobuf, no Envelope**. A client:
 
 ```python
-# pub/sub — Envelope-framed
-session.declare_publisher(pub_key).put(keelson.enclose(route.SerializeToString()))
+from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
+from keelson.payloads.Route_pb2 import Route
+from route_planner.model.vessel_profile import plan_request
 
-# rpc responder — bare protobuf; reply takes (key, bytes); errors go on the error channel
-def on_plan(query):
-    req = PlanRouteRequest.FromString(bytes(query.payload.to_bytes()))
-    try:
-        resp = plan(req)                              # → PlanRouteResponse
-        query.reply(rpc_key, resp.SerializeToString())
-    except Exception as exc:
-        query.reply_err(ErrorResponse(error_description=str(exc)).SerializeToString())
-session.declare_queryable(rpc_key, on_plan, complete=True)
-
-# rpc client — request + reply are bare protobuf
-for reply in session.get(rpc_key, payload=req.SerializeToString()):
+req = plan_request([(57.70, 11.80), (57.72, 11.86)], profile=profile, goal="safest", max_alternatives=3)
+for reply in session.get(rpc_key, payload=req.SerializeToString(),
+                         consolidation=zenoh.ConsolidationMode.NONE):
     if reply.ok is not None:
-        resp = PlanRouteResponse.FromString(bytes(reply.ok.payload.to_bytes()))
+        route = Route.FromString(bytes(reply.ok.payload.to_bytes()))
     else:                                              # ErrorResponse on the error channel
         err = ErrorResponse.FromString(bytes(reply.err.payload.to_bytes()))
+        # err.code is an ErrorResponse.Code
 ```
 
-`ErrorResponse` is `keelson.interfaces.ErrorResponse_pb2.ErrorResponse`. Zenoh session opens in
-`client` mode toward the Keelson router (`tcp/…:7447`), matching the chart-server query-bridge
-convention.
+Zenoh session opens in `client` mode toward the Keelson router (`tcp/…:7447`), matching the
+chart-server query-bridge convention.
 
-> **SDK note.** Typed `keelson.Route` / `PlanRouteResponse` (de)serialization needs the keelson
-> **monorepo** SDK — the pinned PyPI `keelson==0.5.1` wheel ships `construct_rpc_key` and
-> `ErrorResponse` but **not** `payloads.Route_pb2`. Switch the dependency before P5
-> (e.g. `uv pip install ../keelson/sdks/python`).
+**Liveliness:** the source-level token, plus the `route_planner/v1` interface token from
+`serve_rpc`. No subject-level tokens: the route keys below carry no producer chunk, so there is no
+producer prefix to declare one at (protocol-specification.md §2.1.1).
 
 ---
 
-## 5. Publication subjects (all already in `subjects.yaml`)
+## 5. Publication subjects
 
-| Subject | Type | Planner use |
+Routes are published in keelson's edition key tree (protocol-specification.md §6.3). Lifecycle is
+`Route.status`, not a separate subject — there is no `route_planned` (removed by keelson #141).
+
+| Key (under `pubsub/`) | Type | Planner use |
 |---|---|---|
-| `route_planned` | `keelson.Route` | Each proposed alternative (status `PLANNED`/`RECOMMENDED`). |
-| `route` | `keelson.Route` | A route once selected by the operator. |
-| `route_status` | `keelson.RouteStatusUpdate` | Lightweight status broadcasts (`route_id`, `route_edition_number`, `status`, `changed_by`, `note`). |
-| `navigable_waters_geojson` | `keelson.TimestampedGeoJSON` | *Optional* debug overlay of the navigable-water polygons. |
-| `no_go_zone_geojson` | `keelson.TimestampedGeoJSON` | *Optional* echo of the no-go zones used. |
+| `route/{route_id}/edition/{N}` | `keelson.Route` | Every edition, immutable once written: each planned alternative as edition 1 (`PLANNED`/`RECOMMENDED`), each selection as N+1 (`ACKNOWLEDGED`). |
+| `route/{route_id}/latest` | `keelson.Route` | Pointer to the highest edition, published right after it. |
+| `route_change_event/{route_id}/{change_id}` | `keelson.RouteChangeEvent` | The audit record of an edition bump (`select_route`); `author_id` = the planner's source id. |
+| `route_status/{route_id}` | `keelson.RouteStatusUpdate` | Lightweight status broadcast after a selection. |
 
-`route_active` / `voyage` / `route_execution` are **execution-side** subjects owned by the autopilot/
-voyage layer — the planner does **not** publish to them. **No route command is ever published to an
-autopilot subject.**
+`select_route` publishes in the §6.4 order: edition N+1, `latest`, `route_change_event`, then
+`route_status`. A planned alternative's edition 1 has no prior edition, so it gets no change event.
+
+`voyage` / `route_execution` are **execution-side** subjects owned by the autopilot/voyage layer —
+the planner does **not** publish to them. **No route command is ever published to an autopilot
+subject.**
 
 ---
 
-## 6. Crowsnest consumption (existing transport)
+## 6. Crowsnest consumption
 
-Crowsnest already subscribes to `route`/`route_planned` via `useRouteSync` and talks to chart-server
-over Zenoh RPC through a SharedWorker (`ws://localhost:10000`). The "Auto-plan route" action calls
-`plan_route` over that same RPC bridge (a small extension of the `chartServerQuery.js` `rpcGet`
-helper), receives `PlanRouteResponse.alternatives`, and renders them with the existing route
-geometry layers — no new transport and no HTTP dependency.
+Crowsnest reads routes from the same §6.3 key tree (`services/routeSync.js`) and calls `plan_route`
+with `rpcKeyFor("route_planner/v1")` over its SharedWorker multi-reply bridge
+(`services/routePlannerRpc.js`). **Its request builder still sends the old `keelson.Route`
+template**; it has to send a `PlanRouteRequest` before it can plan against this version.

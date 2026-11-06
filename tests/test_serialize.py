@@ -65,6 +65,20 @@ def test_route_from_planned_maps_fields():
     assert r.info.author_organization == "se.rise"
 
 
+def test_waypoint_overrides_left_unset_without_a_profile_value():
+    """Waypoint speed/radius are `optional` overrides: absent means "route default", never 0."""
+    bare = {k: v for k, v in PROFILE.items() if k not in ("preferred_speed_kn", "turn_radius_m")}
+    for profile in (bare, {**bare, "preferred_speed_kn": 0, "turn_radius_m": 0}):
+        r = route_from_planned(_planned(), profile=profile, optimization_goal="shortest")
+        for wp in r.waypoints.waypoint:
+            assert not wp.HasField("planned_sog_knots")
+            assert not wp.HasField("radius_m")
+
+    r = route_from_planned(_planned(), profile=PROFILE, optimization_goal="shortest")
+    assert all(wp.HasField("planned_sog_knots") for wp in r.waypoints.waypoint)
+    assert all(isinstance(wp.id, str) and wp.id for wp in r.waypoints.waypoint)
+
+
 def test_serialize_roundtrip():
     from keelson.payloads.Route_pb2 import Route
 

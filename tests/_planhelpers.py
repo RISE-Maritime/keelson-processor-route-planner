@@ -1,4 +1,4 @@
-"""Shared builders for P6 tests (fake chart adapter + plan_route request template)."""
+"""Shared builders for planner tests (fake chart adapter, PlanRouteRequest, a Route to validate)."""
 
 from __future__ import annotations
 
@@ -49,8 +49,19 @@ class FakeAdapter:
         self.closed = True
 
 
-def request_route(start, end, *, goal="shortest", profile=PROFILE, n_alternatives=1, constraints=None):
-    """Build a plan_route request keelson.Route template (the client's shape)."""
+def plan_request(start, end, *, goal="shortest", profile=PROFILE, n_alternatives=1, constraints=None, via=()):
+    """Build a route_planner/v1 PlanRouteRequest (the client's shape)."""
+    return vp.plan_request(
+        [start, *via, end],
+        profile=profile,
+        goal=goal,
+        max_alternatives=n_alternatives,
+        constraints=constraints,
+    )
+
+
+def route_between(start, end, *, goal="shortest", profile=PROFILE, constraints=None):
+    """Build a keelson.Route through the points — the input validate_route takes."""
     from keelson.payloads.Route_pb2 import Route
 
     route = Route()
@@ -58,7 +69,5 @@ def request_route(start, end, *, goal="shortest", profile=PROFILE, n_alternative
     for lat, lon in [start, end]:
         wp = route.waypoints.waypoint.add()
         set_lat_lon(wp.position, lat, lon)
-    route.extensions.entries.append(
-        vp.planner_extension_entry(profile, constraints=constraints, return_alternatives=n_alternatives)
-    )
+    route.extensions.entries.append(vp.planner_extension_entry(profile, constraints=constraints))
     return route

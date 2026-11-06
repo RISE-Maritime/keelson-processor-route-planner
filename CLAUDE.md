@@ -19,9 +19,10 @@ HTTP** — plus a pub/sub publication layer. It runs on our backend as a Docker 
 
 **Status:** P1–P7 done — **planning + validation work end-to-end over Zenoh RPC.** `plan_route` runs
 chart_adapter → navigability → pathfinding → `keelson.Route` serialization → validation, stores +
-publishes each alternative on `route_planned`, and multi-replies one `keelson.Route` per alternative
-(clients query with `consolidation=NONE`); `select_route` publishes `route` + `route_status`;
-`get_route` reads the in-memory store; `validate_route` re-validates an (edited) route and replies it
+publishes each alternative as edition 1 on `route/{id}/edition/1` + `latest`, and multi-replies one
+`keelson.Route` per alternative (clients query with `consolidation=NONE`); `select_route` takes a
+`RouteRef`, makes a new edition and publishes it per keelson §6.4 (edition, latest,
+`route_change_event`) + `route_status`; `get_route` resolves an exact `RouteRef` edition; `validate_route` re-validates an (edited) route and replies it
 annotated with `issues`/`challenges`/`status`. Verified live against the chart-server. Next: P8
 Crowsnest "Auto-plan" UI. See [docs/ROADMAP.md](docs/ROADMAP.md) (P0–P12).
 
@@ -45,20 +46,20 @@ Crowsnest route-editor ──"Auto-plan" (Keelson RPC)──▶ RoutePlanner que
         chart_adapter/ ──▶ navigability/ ──▶ pathfinding/ (A*) ──▶ model/ (→ keelson.Route)
             │ (S-57 fetch+normalize)   (cost surface)    │                    │
             ▼                                            ▼                    ▼
-        chart-server (PostGIS / /api/* / chart/**)   validation/        publish/ (route_planned/route/route_status)
+        chart-server (PostGIS / /api/* / chart/**)   validation/        publish/ (route editions/route_change_event/route_status)
 ```
 
 Source lives under `src/route_planner/`; `bin/route_planner` is a thin wrapper that calls
 `route_planner.app:main`. Subpackages (`rpc`, `chart_adapter`, `navigability`, `pathfinding`,
 `model`, `validation`, `publish`) map 1:1 to the phases in ROADMAP — most are empty stubs today.
-`rpc/` is the integration layer (declares the queryables); there is no HTTP `api/`.
+`rpc/` is the integration layer (serves keelson's `route_planner/v1` via `serve_rpc`); there is no HTTP `api/`.
 
 ## Common commands
 ```bash
-# Install. keelson MUST come from the monorepo SDK (the PyPI wheel lacks payloads.Route_pb2,
-# our canonical contract type). Install it first, then our package:
-uv pip install ../keelson/sdks/python   # monorepo keelson (Route_pb2 ✓)
-uv pip install -e ".[dev]"              # our pkg + ruff/pytest (keelson already satisfied)
+# Install: the locked env. keelson is pinned EXACTLY to a published release (pyproject.toml);
+# never a local checkout. `uv sync` is exact — add `--all-extras` to keep the benchmark/notebook/
+# risk extras installed.
+uv sync --extra dev
 
 # Run locally against a router (built-in defaults: realm=rise, entity=route-planner)
 route_planner --connect tcp/localhost:7447
@@ -75,23 +76,26 @@ docker compose -f docker-compose.dev.yml up --build
 
 ## Keelson integration cheatsheet (reuse the SDK — do not reinvent)
 - Scaffolding (`keelson.scaffolding`): `add_common_arguments`, `create_zenoh_config`,
-  `setup_logging`, `GracefulShutdown`, `declare_liveliness_token` (all wired in `app.py`); plus
-  `LivelinessMonitor` and `make_configurable` (runtime RPC config) available for later phases.
-- Keys: `construct_pubsub_key(realm, entity_id, subject, source_id, …)`, `construct_rpc_key(...)`,
-  `construct_liveliness_key(...)`. Key-space hardcodes `/@v0/`.
+  `setup_logging`, `GracefulShutdown`, `declare_liveliness` (all wired in `app.py`), `serve_rpc`
+  (in `rpc/`), `put` (in `publish/`); plus `LivelinessMonitor` and `make_configurable` (runtime RPC
+  config) available for later phases.
+- Keys: `construct_pubsub_key(base, entity_id, subject, source_id)`,
+  `construct_rpc_key(base, entity_id, "route_planner", "v1", procedure, source_id)`. Key-space
+  hardcodes `/@v0/`.
 - Framing: **pub/sub** is Envelope-framed (`enclose`/`uncover`; `get_subject_schema` +
   `decode_protobuf_payload_from_type_name`). **RPC is bare protobuf, no Envelope** — parse with
-  `Msg.FromString(bytes(query.payload.to_bytes()))`, reply `query.reply(key, msg.SerializeToString())`,
-  error `query.reply_err(ErrorResponse(error_description=...).SerializeToString())`. See `rpc/`.
+  `Msg.FromString(op.request_bytes)`, reply `op.reply_ok(msg)`, error
+  `op.reply_err(description, ErrorResponse.Code.X)` with a typed code. See `rpc/`.
 - **Adopt `keelson.Route`** (RTZ-1.2 / S-421 superset) as the canonical artifact — do NOT invent
   parallel `voyage_route` / `route_geojson` protobufs. Planner-specific data goes in a route
-  `Extensions` entry (`manufacturer: "se.rise"`, `name: "route-planner"`). `keelson.Route` is the
-  **canonical RPC contract** (request + response; see docs/KEELSON-INTEGRATION.md §3) — it needs the
-  keelson **monorepo** SDK, since the PyPI wheel lacks `payloads.Route_pb2`.
+  `Extensions` entry (`manufacturer: "se.rise"`, `name: "route-planner"`). The RPC contract is
+  keelson's `interfaces/RoutePlanner.proto` (`route_planner/v1`): `PlanRouteRequest` in,
+  `keelson.Route` out, `RouteRef` to address an edition (docs/KEELSON-INTEGRATION.md §3).
 
 Reference upstream files (read-only, in sibling repos):
 - `/Users/ted/Documents/CODE/keelson/messages/payloads/Route.proto` — the route/voyage model.
 - `/Users/ted/Documents/CODE/keelson/messages/subjects.yaml` — subject → payload registry.
+- `/Users/ted/Documents/CODE/keelson/interfaces/RoutePlanner.proto` — the `route_planner/v1` contract this service serves.
 - `/Users/ted/Documents/CODE/keelson/sdks/python/keelson/scaffolding/` — scaffolding utilities.
 - `/Users/ted/Documents/CODE/chart-server/` — S-57 chart service (PostGIS + query-bridge).
 - `/Users/ted/Documents/CODE/crowsnest-dev/src/apps/route-editor/` — the consumer UI + `useRouteSafetyScan`.

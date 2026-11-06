@@ -11,10 +11,8 @@ WORKDIR /app
 # 1) Third-party dependencies, in a layer keyed ONLY on pyproject.toml. Editing application
 #    code does not re-resolve or re-download these. The uv cache mount persists wheels across
 #    builds, so the big geospatial wheels (shapely/pyproj) download once.
-# TODO(packaging): this installs keelson from PyPI, whose wheel LACKS payloads.Route_pb2 (our
-#    canonical contract type). The container boots and declares the RPC queryables, but get_route/
-#    select_route error at call time until the image bundles the keelson monorepo SDK (COPY it into
-#    the build context + `uv pip install` it, or build+publish a complete keelson wheel).
+#    keelson comes from PyPI at the exact version pyproject.toml pins; that release ships the
+#    generated payloads + interfaces (Route_pb2, RoutePlanner_pb2) the service needs.
 COPY pyproject.toml README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r pyproject.toml
