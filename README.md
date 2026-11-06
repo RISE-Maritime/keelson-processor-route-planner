@@ -99,6 +99,25 @@ Runtime config layers (lowest precedence first): built-in defaults < `--config <
 [config/example.yaml](config/example.yaml)) < CLI flags. `CHART_SERVER_URL` / `DATABASE_URL` come
 from the environment (see [.env.example](.env.example)).
 
+## Navigation risk of a route
+
+With the `risk` extra (`uv pip install -e ".[risk]"`, which takes keelson-processor-navrisk from the
+sibling checkout), `validate_route` also runs navrisk's model over the track the route implies
+(`src/route_planner/risk.py`, over `navrisk.route`). The result is recorded on the route:
+
+- an Extensions entry `se.rise` / `navrisk-route-risk`, holding the route's level, each dimension's
+  worst value or *not measurable* and why, the gates, and per-leg and per-turn profiles as JSON
+  attributes;
+- a `RouteChallenge` for each failed declared gate, each turn tighter than the turning envelope or
+  not fitting between its legs, and each HIGH leg.
+
+Collision is never assessed on a plan: there is no traffic forecast, and the entry says so. Gate
+limits are declared per route as `<dimension>_risk_max` attributes on that entry; none is set by
+default. The chart database is `NAVRISK_CHART_DSN`, or `DATABASE_URL` when that is unset. It is
+opened read-only, and without it the water is not measurable, never zero. `plan_route` assesses its
+alternatives too only with `NAVRISK_ON_PLAN=1`, because each assessment queries the chart along the
+whole route (about 5 s for 4 km on the local ENCs).
+
 ## Documentation
 
 - [docs/DESIGN.md](docs/DESIGN.md) — full architecture, engines, safety rule, deferred phases.

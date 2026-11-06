@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<route xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1.0" xmlns="http://www.cirm.org/RTZ/1/0">
+	<routeInfo routeName="02 PS1 via S.Ch to Frihamnen"/>
+	<waypoints>
+		<defaultWaypoint>
+			<leg portsideXTD="1" starboardXTD="1"/>
+		</defaultWaypoint>
+		<waypoint id="1" name="VTS South In">
+			<position lon="11.63149427" lat="57.53209383"/>
+			<leg geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="2" name="Pilot Boarding # 1" radius="0.3">
+			<position lon="11.64916297" lat="57.57479404"/>
+			<leg portsideXTD="0.27" starboardXTD="0.27" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="3" name="Sänkberget" radius="1">
+			<position lon="11.6638549" lat="57.605217"/>
+			<leg portsideXTD="0.1" starboardXTD="0.1" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="4" name="Uppgrund" radius="1">
+			<position lon="11.69343197" lat="57.63064897"/>
+			<leg portsideXTD="0.1" starboardXTD="0.1" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="5" name="Böttö Västra" radius="0.75">
+			<position lon="11.70552323" lat="57.64846208"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="6" name="Brandnäs" radius="0.75">
+			<position lon="11.73797093" lat="57.6541146"/>
+			<leg portsideXTD="0.04" starboardXTD="0.04" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="7" name="Gäveskär" radius="0.75">
+			<position lon="11.7714766" lat="57.65927118"/>
+			<leg portsideXTD="0.04" starboardXTD="0.04" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="8" name="Knippelholmen" radius="0.75">
+			<position lon="11.81044767" lat="57.67871892"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="9" name="Älvsborg" radius="0.5">
+			<position lon="11.8421245" lat="57.68231782"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="10" name="Tångudden" radius="0.5">
+			<position lon="11.86466257" lat="57.68578157"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="11" name="Rya Nabbe" radius="0.5">
+			<position lon="11.881694" lat="57.68738535"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="12" name="Berth 551" radius="0.5">
+			<position lon="11.8865358" lat="57.68793653"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="13" name="Nya Varvet" radius="0.5">
+			<position lon="11.89356342" lat="57.68908717"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="14" name="Älvsborgsbron" radius="0.5">
+			<position lon="11.9018666" lat="57.69070557"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="15" name="Eriksberg" radius="0.5">
+			<position lon="11.91682078" lat="57.69843738"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="16" name="Fiskhamnskröken" radius="0.5">
+			<position lon="11.92413192" lat="57.70117828"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="17" name="Lindholmen" radius="0.3">
+			<position lon="11.93571522" lat="57.70204982"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="18" name="Floating Dock 190" radius="0.3">
+			<position lon="11.94615192" lat="57.70303502"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="19" name="P-Arken" radius="0.3">
+			<position lon="11.95377472" lat="57.70539105"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="20" name="Berth 195" radius="0.2">
+			<position lon="11.95559452" lat="57.70806748"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="21" name="Frihamnen" radius="0.2">
+			<position lon="11.9561845" lat="57.71167705"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+	</waypoints>
+</route>

@@ -6,6 +6,7 @@ import pytest
 from _planhelpers import FakeAdapter, deep_chart, request_route
 
 from route_planner.planner import PlanError, corridor_bbox, parse_request, run_plan
+from route_planner.model.position import set_lat_lon
 
 
 def test_parse_request_extracts_inputs():
@@ -32,7 +33,7 @@ def test_corridor_bbox_pads_around_points():
 
 
 def test_run_plan_produces_serializable_routes():
-    from keelson.payloads.Route_pb2 import RECOMMENDED
+    from route_planner.model.enums import RECOMMENDED
 
     adapter = FakeAdapter(deep_chart())
     routes, meta = run_plan(adapter, request_route((57.70, 11.80), (57.72, 11.86), n_alternatives=2))
@@ -49,7 +50,6 @@ def test_run_plan_requires_two_waypoints():
 
     r = Route()
     wp = r.waypoints.waypoint.add()
-    wp.position.latitude = 57.70
-    wp.position.longitude = 11.80
+    set_lat_lon(wp.position, 57.70, 11.80)
     with pytest.raises(PlanError):
         run_plan(FakeAdapter(deep_chart()), r)

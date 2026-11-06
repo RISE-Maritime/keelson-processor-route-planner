@@ -27,10 +27,15 @@ Crowsnest "Auto-plan" UI. See [docs/ROADMAP.md](docs/ROADMAP.md) (P0–P12).
 
 ## Where to look first
 - [docs/ROADMAP.md](docs/ROADMAP.md) — phases P0–P12, the MVP slice (P1–P8), optimization goals.
+- [TODO.md](TODO.md) — granular actionable checklist (near-term items + phase-status mirror).
 - [docs/DESIGN.md](docs/DESIGN.md) — authoritative architecture, the engines, the safety rule.
 - [docs/KEELSON-INTEGRATION.md](docs/KEELSON-INTEGRATION.md) — `keelson.Route` mapping, RPC sketch,
   key-space, subjects.
 - [docs/CHART-ADAPTER.md](docs/CHART-ADAPTER.md) — chart-server query contract + S-57 normalization.
+- [docs/PRIOR-ART.md](docs/PRIOR-ART.md) — papers + OSS the engines draw on (A* on ENC, cost
+  surfaces, RTZ/S-421 lineage).
+- [docs/BENCHMARK.md](docs/BENCHMARK.md) — offline harness: score/tune the planner against pilot
+  RTZ + historical-AIS ground truth (`reference/`, `benchmark/`).
 
 ## Architecture (target shape)
 

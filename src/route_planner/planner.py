@@ -8,6 +8,8 @@ module stays cheap; the chart_adapter is the only I/O (the rest is pure geometry
 
 from __future__ import annotations
 
+from .model.position import lat_lon
+
 import logging
 import math
 
@@ -57,7 +59,7 @@ def parse_request(request_route):
     from .model import vessel_profile
 
     waypoints = [
-        (wp.position.latitude, wp.position.longitude)
+        lat_lon(wp.position)
         for wp in request_route.waypoints.waypoint
     ]
     if len(waypoints) < 2:
@@ -121,9 +123,25 @@ def run_plan(adapter, request_route):
     )
     from .validation import validate
 
+    import os
+
+    from . import risk
+
     for route in routes:
         validate(route, nav)  # populate issues/challenges/status before reply + publish
+        if os.environ.get(risk.ON_PLAN_ENV) == "1":
+            _assess_risk(route)
     return routes, {"warnings": nav.warnings, "n_alternatives": len(routes)}
+
+
+def _assess_risk(route):
+    """navrisk over the planned route (risk.py), then the validation summary recounted."""
+    from . import risk
+    from .validation import _finalize
+
+    risk.annotate(route, risk.chart_source())
+    _finalize(route, risk.time.time_ns())
+    return route
 
 
 def run_validate(adapter, request_route):
@@ -141,4 +159,4 @@ def run_validate(adapter, request_route):
     nav = build_navigability(
         chart, nav_params_from_profile(req["profile"], req["optimization_goal"], req["constraints"])
     )
-    return validate(request_route, nav)
+    return _assess_risk(validate(request_route, nav))

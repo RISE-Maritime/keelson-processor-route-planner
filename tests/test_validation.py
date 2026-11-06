@@ -7,6 +7,7 @@ from shapely.geometry import box
 from route_planner.chart_adapter.layers import DEPTH_AREAS, LAND, ChartFeature, NormalizedChart
 from route_planner.navigability import build_navigability, nav_params_from_profile
 from route_planner.validation import validate
+from route_planner.model.position import set_lat_lon
 
 PROFILE = {"draught_m": 0.25, "min_under_keel_clearance_m": 0.5, "route_margin_m": 15.0}
 CORRIDOR = (11.80, 57.70, 11.90, 57.76)
@@ -34,14 +35,15 @@ def _nav_carved(hazard):
 
 
 def _route(waypoints, *, snapped_start=False, snapped_end=False):
-    from keelson.payloads.Route_pb2 import RECOMMENDED, Route
+    from keelson.payloads.Route_pb2 import Route
+
+    from route_planner.model.enums import RECOMMENDED
 
     route = Route(route_id="r1", status=RECOMMENDED)
     for i, (lat, lon) in enumerate(waypoints):
         wp = route.waypoints.waypoint.add()
-        wp.id = i + 1
-        wp.position.latitude = lat
-        wp.position.longitude = lon
+        wp.id = str(i + 1)
+        set_lat_lon(wp.position, lat, lon)
     entry = route.extensions.entries.add()
     entry.manufacturer = "se.rise"
     entry.name = "route-planner"
@@ -60,7 +62,7 @@ def _cross_route():
 
 
 def test_clean_route_has_no_issues():
-    from keelson.payloads.Route_pb2 import RECOMMENDED
+    from route_planner.model.enums import RECOMMENDED
 
     route = _route([(57.705, 11.81), (57.755, 11.89)])
     validate(route, _nav())
@@ -70,7 +72,7 @@ def test_clean_route_has_no_issues():
 
 
 def test_land_crossing_is_critical():
-    from keelson.payloads.Route_pb2 import CRITICAL, ROUTE_ISSUES
+    from route_planner.model.enums import CRITICAL, ROUTE_ISSUES
 
     route = _cross_route()
     validate(route, _nav_carved(ChartFeature(LAND, HAZARD_BOX, {"objnam": "islet"})))
@@ -86,7 +88,7 @@ def test_unsafe_depth_is_critical():
 
 
 def test_shallow_but_legal_is_a_soft_challenge():
-    from keelson.payloads.Route_pb2 import SHALLOW_WATER, WARNING
+    from route_planner.model.enums import SHALLOW_WATER, WARNING
 
     route = _cross_route()
     validate(route, _nav(ChartFeature(DEPTH_AREAS, HAZARD_BOX, {"drval1": 1.0, "drval2": 2.0})))

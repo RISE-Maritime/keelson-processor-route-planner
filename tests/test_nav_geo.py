@@ -24,6 +24,19 @@ def test_forward_origin_near_zero():
     assert abs(y) < 1e-3
 
 
+def test_forward_axis_convention():
+    # Guard against a lat/lon swap: east of centre -> +x, north of centre -> +y.
+    proj = geo.Projection(lat_0=57.7, lon_0=11.8)
+    # Due east follows a parallel (not a geodesic), so a few metres of y is expected; a lat/lon
+    # swap would instead dump the whole ~6 km displacement into y.
+    x_east, y_east = proj.forward(11.9, 57.7)  # due east
+    assert x_east > 1000.0
+    assert abs(y_east) < 100.0
+    x_north, y_north = proj.forward(11.8, 57.8)  # due north (a meridian -> a geodesic, x ~ 0)
+    assert y_north > 1000.0
+    assert abs(x_north) < 1.0
+
+
 def test_buffer_m_area_matches_radius():
     proj = geo.Projection(lat_0=57.7, lon_0=11.8)
     point_m = proj.to_metric(Point(11.8, 57.7))

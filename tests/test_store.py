@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from keelson.payloads.Route_pb2 import ACKNOWLEDGED, PLANNED, RECOMMENDED, Route
+from keelson.payloads.Route_pb2 import Route
 
+from route_planner.model.enums import ACKNOWLEDGED, PLANNED, RECOMMENDED
 from route_planner.model.store import RouteStore
 
 

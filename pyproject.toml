@@ -31,6 +31,29 @@ dev = [
     "ruff>=0.6",
     "pytest>=8",
 ]
+# Offline benchmark/tuning harness (benchmark/, reference/): score generated routes against pilot
+# RTZ + AIS ground truth. pandas only for tabular aggregation; the scoring core needs just numpy.
+benchmark = [
+    "pandas>=2.0",
+]
+# Interactive exploration + tuning harness (notebooks/, src/route_planner/debug.py). Not needed to
+# run the processor; viz imports are lazy so the core package never requires these.
+notebook = [
+    "jupyterlab>=4",
+    "ipykernel>=6",
+    "nbconvert>=7",
+    "plotly>=5",
+    "pydeck>=0.9",
+    "ipywidgets>=8",
+    "ipyleaflet>=0.18",  # interactive start/end point picking in the notebook
+]
+
+# Navigation risk of a planned route (src/route_planner/risk.py): keelson-processor-navrisk's model
+# core (no keelson, no zenoh) plus its PostGIS chart query. Without it validate_route still runs and
+# the route's risk entry says "unavailable".
+risk = [
+    "navrisk[postgis]",
+]
 
 [project.scripts]
 route_planner = "route_planner.app:main"
@@ -44,3 +67,11 @@ target-version = "py313"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "perf: opt-in planner latency report (set RUN_PERF=1); not a CI gate",
+]
+
+# navrisk is not on PyPI: uv installs it from the sibling checkout, as navrisk takes DRYDOCK. Only the
+# risk extra names it. pip ignores this table.
+[tool.uv.sources]
+navrisk = { path = "../keelson-processor-navrisk", editable = true }

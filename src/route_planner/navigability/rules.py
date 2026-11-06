@@ -24,6 +24,10 @@ DANGEROUS_WATLEV = frozenset({1, 2, 4, 5})
 DEFAULT_UKC_M = 0.5
 DEFAULT_MARGIN_M = 10.0
 DEFAULT_CHART_SCALE_THRESHOLD = 100_000  # coarser than ~1:100k counts as poor chart quality
+# How far off land/shallow the planner *prefers* to stay (the clearance-gradient target). The
+# pathfinder rewards clearance up to this distance, so routes bow to mid-channel / channel centerlines.
+DEFAULT_CLEARANCE_TARGET_M = 150.0
+CONSERVATIVE_CLEARANCE_TARGET_M = 300.0
 
 
 @dataclass
@@ -36,7 +40,9 @@ class NavParams:
     comfortable_depth_m: float = 0.0  # shallow-but-legal band upper bound; derived if 0
     block_unknown_depth: bool = False
     prefer_fairways: bool = False
+    prefer_ais_corridors: bool = False
     poor_chart_scale_threshold: float = DEFAULT_CHART_SCALE_THRESHOLD
+    clearance_target_m: float = DEFAULT_CLEARANCE_TARGET_M
     mode: str = ""
 
     def __post_init__(self):
@@ -71,6 +77,14 @@ def nav_params_from_profile(
     prefer_fairways = bool(
         constraints.get("prefer_fairways", mode in {"prefer_fairways", "archipelago_conservative"})
     )
+    # AIS-corridor preference is purely opt-in (needs an AIS corridor supplied to build_navigability).
+    prefer_ais_corridors = bool(constraints.get("prefer_ais_corridors", False))
+
+    # Prefer to stay this far off land/shallow (clearance gradient); larger when playing it safe,
+    # never below a few route-margins so it survives small/large margins sensibly.
+    base_clear = CONSERVATIVE_CLEARANCE_TARGET_M if mode in CONSERVATIVE_MODES else DEFAULT_CLEARANCE_TARGET_M
+    clearance_target = _f(constraints.get("clearance_target_m"), base_clear) or base_clear
+    clearance_target = max(clearance_target, margin * 4)
 
     return NavParams(
         safety_depth_m=draught + ukc,
@@ -78,6 +92,8 @@ def nav_params_from_profile(
         hazard_buffer_m=margin,
         block_unknown_depth=block_unknown,
         prefer_fairways=prefer_fairways,
+        prefer_ais_corridors=prefer_ais_corridors,
+        clearance_target_m=clearance_target,
         mode=mode,
     )
 

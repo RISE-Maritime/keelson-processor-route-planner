@@ -15,7 +15,9 @@ import math
 from dataclasses import dataclass, field
 
 import shapely
+from pyproj import Geod
 from shapely.geometry import LineString
+from shapely.prepared import prep
 
 from .grid import CostGrid
 from .search import search
@@ -23,6 +25,13 @@ from .search import search
 logger = logging.getLogger(__name__)
 
 _KN_TO_MS = 0.514444
+# Output leg distances/bearings are geodesic on WGS84 (lat/lon waypoints); internal geometry is
+# planar AEQD metres. The metric grid never sees this.
+_GEOD = Geod(ellps="WGS84")
+
+# A straight shortcut is accepted only if it costs no more than this factor over the cell sub-path
+# it replaces — removing sub-cell staircase noise (cost-neutral) while keeping cost-reducing turns.
+_SHORTCUT_TOL = 1.02
 
 __all__ = ["PlannedRoute", "plan", "CostGrid"]
 
@@ -41,49 +50,102 @@ class PlannedRoute:
     status_hint: str = "PLANNED"
 
 
-def _bearing_deg(p0, p1) -> float:
-    """Initial great-circle bearing from (lat, lon) p0 to p1, degrees [0, 360)."""
-    lat0, lon0, lat1, lon1 = map(math.radians, (p0[0], p0[1], p1[0], p1[1]))
-    d_lon = lon1 - lon0
-    y = math.sin(d_lon) * math.cos(lat1)
-    x = math.cos(lat0) * math.sin(lat1) - math.sin(lat0) * math.cos(lat1) * math.cos(d_lon)
-    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
-
-
 def _segment_cells(grid, snapped):
-    """A* through each consecutive pair of snapped cells; concatenated cell path or None."""
-    cells = []
-    for a, b in zip(snapped, snapped[1:]):
+    """A* through each consecutive pair of snapped cells.
+
+    Returns ``(cells, anchors)`` — the concatenated cell path and the indices into it of the via
+    junctions (every requested via point) so simplification never string-pulls across them — or
+    None if any segment is unreachable.
+    """
+    cells, anchors = [], []
+    n_seg = len(snapped) - 1
+    for k, (a, b) in enumerate(zip(snapped, snapped[1:])):
         sub = search(grid, a, b)
         if sub is None:
             return None
         cells.extend(sub if not cells else sub[1:])
-    return cells or None
+        if k < n_seg - 1:  # the join is a via point; the final segment's end is the route end
+            anchors.append(len(cells) - 1)
+    if not cells:
+        return None
+    return cells, anchors
 
 
-def _postprocess(grid, navigable, cells):
-    """Cell path -> simplified metric LineString that stays within navigable water."""
+def _seg_cost(grid, p, q) -> float:
+    """Grid traversal cost of the straight leg p->q (sampled at ~cell resolution).
+
+    ``inf`` if the leg leaves navigable water. Same metric as the cell-path cost (Σ step ·
+    ½(cost_a+cost_b)) over ``base_cost`` (penalty-free) so the two are directly comparable.
+    """
+    dist = math.hypot(q[0] - p[0], q[1] - p[1])
+    n = max(1, int(dist / grid.cell_size) + 1)
+    base = grid.base_cost
+    prev, total = None, 0.0
+    for k in range(n + 1):
+        t = k / n
+        row, col = grid.world_to_cell(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+        if not grid.mask[row, col]:
+            return math.inf
+        cc = base[row, col]
+        if prev is not None:
+            total += (dist / n) * 0.5 * (prev + cc)
+        prev = cc
+    return total
+
+
+def _path_cost(grid, cells, i, j) -> float:
+    """Cell-path cost from index i to j over ``base_cost`` (matches _seg_cost's metric)."""
+    base = grid.base_cost
+    total = 0.0
+    for (r0, c0), (r1, c1) in zip(cells[i:j], cells[i + 1 : j + 1]):
+        step = grid.cell_size * math.hypot(r1 - r0, c1 - c0)
+        total += step * 0.5 * (base[r0, c0] + base[r1, c1])
+    return total
+
+
+def _postprocess(grid, navigable, cells, anchors=()):
+    """Cell path -> minimal metric LineString that preserves the route's cost, not just its shape.
+
+    Cost-aware line-of-sight "string pulling": keep an anchor, then accept the straight shortcut to
+    each next candidate only while it (a) stays geometrically inside the navigable polygon — an exact
+    check that a corner-clipping leg can't pass even when cell-center sampling would miss the thin
+    intrusion — AND (b) costs essentially the same as the cell sub-path it would replace (within
+    `_SHORTCUT_TOL`). On a flat cost surface every in-water shortcut is cost-neutral, so straight legs
+    collapse to their endpoints; where the path deliberately bows (clearance gradient, soft-cost
+    avoidance) a shortcut would raise cost and is rejected, so those turns survive. Replaces the old
+    Douglas-Peucker + raw-path back-off that left the grid staircase.
+    """
     pts = [grid.cell_to_world(r, c) for r, c in cells]
-    line = LineString(pts)
-    simplified = line.simplify(grid.cell_size)
-    # Don't let a shortcut leave the water; back off the tolerance, else keep the raw cell path.
-    if navigable is not None and not navigable.buffer(grid.cell_size).covers(simplified):
-        simplified = line.simplify(grid.cell_size * 0.3)
-        if not navigable.buffer(grid.cell_size).covers(simplified):
-            simplified = line
-    return simplified
+    if navigable is None or navigable.is_empty or len(pts) < 3:
+        return LineString(pts)
+    safe = prep(navigable)  # prepared: many cheap exact covers() tests
+    forced = set(anchors)  # via junctions: never string-pull across a requested via point
+    kept = [pts[0]]
+    a = 0
+    for i in range(1, len(pts) - 1):
+        leg = LineString([pts[a], pts[i + 1]])
+        if (
+            i in forced
+            or not safe.covers(leg)
+            or _seg_cost(grid, pts[a], pts[i + 1]) > _path_cost(grid, cells, a, i + 1) * _SHORTCUT_TOL
+        ):
+            kept.append(pts[i])
+            a = i
+    kept.append(pts[-1])
+    return LineString(kept)
 
 
-def _build_route(nav, grid, cells, preferred_speed_kn, snapped_start, snapped_end):
-    line_m = _postprocess(grid, nav.navigable, cells)
+def _build_route(nav, grid, cells, anchors, preferred_speed_kn, snapped_start, snapped_end):
+    line_m = _postprocess(grid, nav.navigable, cells, anchors)
     coords_m = list(line_m.coords)
     waypoints = [tuple(reversed(nav.projection.inverse(x, y))) for x, y in coords_m]  # (lat, lon)
 
     legs, total_m = [], 0.0
-    for (x0, y0), (x1, y1), p0, p1 in zip(coords_m, coords_m[1:], waypoints, waypoints[1:]):
-        seg = math.hypot(x1 - x0, y1 - y0)
+    for p0, p1 in zip(waypoints, waypoints[1:]):
+        # Geod.inv: forward azimuth + geodesic distance on WGS84 from (lat, lon) p0 -> p1.
+        az_fwd, _, seg = _GEOD.inv(p0[1], p0[0], p1[1], p1[0])
         total_m += seg
-        legs.append({"distance_m": round(seg, 1), "bearing_deg": round(_bearing_deg(p0, p1), 1)})
+        legs.append({"distance_m": round(seg, 1), "bearing_deg": round(az_fwd % 360.0, 1)})
 
     metrics = {"distance_m": round(total_m, 1), "n_waypoints": len(waypoints)}
     if preferred_speed_kn:
@@ -147,11 +209,12 @@ def plan(
 
     candidates = []
     for _k in range(max(1, n_alternatives)):
-        cells = _segment_cells(grid, snapped)
-        if cells is None or len(cells) < 2:
+        result = _segment_cells(grid, snapped)
+        if result is None or len(result[0]) < 2:
             break
+        cells, anchors = result
         score = grid.path_base_cost(cells)
-        route = _build_route(nav, grid, cells, preferred_speed_kn, moved[0], moved[-1])
+        route = _build_route(nav, grid, cells, anchors, preferred_speed_kn, moved[0], moved[-1])
         route.optimization_goal = optimization_goal
         if not _too_similar(route, candidates):
             candidates.append((score, route))

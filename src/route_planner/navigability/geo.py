@@ -1,9 +1,15 @@
 """Projection + metric geometry helpers (pure, no I/O).
 
-The navigability engine works in a **local metric CRS** so margins/clearances/areas are in metres
-(you cannot buffer metres on EPSG:4326 degrees). ``Projection`` maps WGS84 <-> a local
-azimuthal-equidistant CRS centred on the corridor; the engine projects once, does all Shapely ops in
-metres, and hands the projection downstream (P4 grid + final waypoint export back to lat/lon).
+The CRS contract has three layers: **WGS84 is primary** (inputs, the keelson.Route contract,
+outputs), **AEQD is internal** (all navigability + pathfinding geometry), **output is geodesic**
+(published leg distances/bearings use pyproj.Geod on the lat/lon waypoints).
+
+The engine works in a **local metric CRS** because its load-bearing op is buffering land/hazards by
+metres, and Shapely is planar — you cannot buffer metres on EPSG:4326 degrees, and no Python library
+offers a true geodesic polygon buffer. ``Projection`` maps WGS84 <-> a local azimuthal-equidistant
+CRS centred on the corridor (round-trip accurate to sub-metre at corridor scale, an order of
+magnitude under route_margin_m); the engine projects once, does all Shapely ops in metres, and hands
+the projection downstream (P4 grid + final waypoint export back to lat/lon).
 """
 
 from __future__ import annotations

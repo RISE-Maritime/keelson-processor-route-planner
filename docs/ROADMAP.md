@@ -73,6 +73,8 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
 - [ ] **P11 — (later) PostGIS persistence** (`routes`, `route_versions`, `route_waypoints`,
   `route_legs`, `route_metrics`, `route_validation_checks`, `vessel_profiles`,
   `planner_cost_profiles`, `chart_feature_evidence`); **AIS-density + weather/sea-state cost layers**.
+  *(AIS-density cost prior prototyped offline — `off_ais_corridor` soft cost + benchmark harness;
+  see [BENCHMARK.md](BENCHMARK.md).)*
 - [ ] **P12 — Tests.** Fixtures: open-water; around-island; archipelago; shallow-area block; via-
   points; start/end outside navigable water (snap + warn); manually-edited route crosses land;
   conservative mode prefers fairways/deep water; traffic-aware avoids dense corridor; RPC plan;

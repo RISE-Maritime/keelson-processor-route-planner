@@ -44,7 +44,7 @@ def test_publish_planned_roundtrip():
 
 
 def test_publish_status_roundtrip():
-    from keelson.payloads.Route_pb2 import ACKNOWLEDGED
+    from route_planner.model.enums import ACKNOWLEDGED
 
     session = zenoh.open(zenoh.Config())
     received, sub = _collect(session, "route_status")

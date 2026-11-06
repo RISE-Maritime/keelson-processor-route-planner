@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<route xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1.0" xmlns="http://www.cirm.org/RTZ/1/0">
+	<routeInfo routeName="31 Frihamnen via N.Ch to PS1"/>
+	<waypoints>
+		<defaultWaypoint>
+			<leg portsideXTD="1" starboardXTD="1"/>
+		</defaultWaypoint>
+		<waypoint id="1" name="Frihamnen" radius="0.2">
+			<position lon="11.9561845" lat="57.71167705"/>
+			<leg geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="2" name="Berth 195" radius="0.2">
+			<position lon="11.95559452" lat="57.70806748"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="3" name="P-Arken" radius="0.3">
+			<position lon="11.95377472" lat="57.70539105"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="4" name="Floating Dock 190" radius="0.3">
+			<position lon="11.94615192" lat="57.70303502"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="5" name="Lindholmen" radius="0.3">
+			<position lon="11.93571522" lat="57.70204982"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="6" name="Fiskhamnskröken" radius="0.5">
+			<position lon="11.92413192" lat="57.70117828"/>
+			<leg portsideXTD="0.02" starboardXTD="0.02" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="7" name="Eriksberg" radius="0.5">
+			<position lon="11.91682078" lat="57.69843738"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="8" name="Älvsborgsbron" radius="0.5">
+			<position lon="11.9018666" lat="57.69070557"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="9" name="Nya Varvet" radius="0.5">
+			<position lon="11.89356342" lat="57.68908717"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="10" name="Berth 551" radius="0.5">
+			<position lon="11.8865358" lat="57.68793653"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="11" name="Rya Nabbe" radius="0.5">
+			<position lon="11.881694" lat="57.68738535"/>
+			<leg portsideXTD="0.03" starboardXTD="0.03" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="12" name="Skandia Hamnen" radius="0.5">
+			<position lon="11.85878673" lat="57.68566113"/>
+			<leg portsideXTD="0.04" starboardXTD="0.04" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="13" name="VTS Reporting #3" radius="0.75">
+			<position lon="11.84181618" lat="57.68372915"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="14" name="Knippelholmen" radius="0.75">
+			<position lon="11.81448963" lat="57.68060668"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="15" name="Torshamnen" radius="0.75">
+			<position lon="11.78727542" lat="57.6793313"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="16" name="North Channel #16" radius="0.75">
+			<position lon="11.74319213" lat="57.67645238"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="17" name="North Channel #12" radius="0.75">
+			<position lon="11.71720195" lat="57.6789194"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="18" name="Dana Fjord" radius="0.75">
+			<position lon="11.68594842" lat="57.66925477"/>
+			<leg portsideXTD="0.07" starboardXTD="0.07" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="19" name="Buskärs Knöte" radius="1">
+			<position lon="11.69385303" lat="57.6391789"/>
+			<leg portsideXTD="0.1" starboardXTD="0.1" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="20" name="Ekeskärsbåden" radius="1">
+			<position lon="11.66456475" lat="57.61588512"/>
+			<leg portsideXTD="0.1" starboardXTD="0.1" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="21" name="Pilot Boarding #1" radius="0.3">
+			<position lon="11.63703647" lat="57.57527537"/>
+			<leg portsideXTD="0.15" starboardXTD="0.15" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="22" name="VTS South Out">
+			<position lon="11.60829919" lat="57.53221303"/>
+			<leg portsideXTD="0.2699784" starboardXTD="0.2699784" geometryType="Orthodrome"/>
+		</waypoint>
+	</waypoints>
+</route>

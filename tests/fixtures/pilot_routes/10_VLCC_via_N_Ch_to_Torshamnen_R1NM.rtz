@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<route xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1.0" xmlns="http://www.cirm.org/RTZ/1/0">
+	<routeInfo routeName="10 VLCC via N Ch to Torshamnen R1NM"/>
+	<waypoints>
+		<defaultWaypoint>
+			<leg portsideXTD="1" starboardXTD="1"/>
+		</defaultWaypoint>
+		<waypoint id="1" name="Pilot Boarding VLCC" radius="0.3">
+			<position lon="11.49166667" lat="57.64166667"/>
+			<leg geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="2" name="SW Trubaduren" radius="1">
+			<position lon="11.6009005" lat="57.58296362"/>
+			<leg portsideXTD="0.27" starboardXTD="0.27" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="3" name="South Trubaduren" radius="1">
+			<position lon="11.64114873" lat="57.58297467"/>
+			<leg portsideXTD="0.1" starboardXTD="0.1" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="4" name="Sänkberget" radius="1">
+			<position lon="11.66111275" lat="57.6059629"/>
+			<leg portsideXTD="0.1" starboardXTD="0.1" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="5" name="Uppgrund" radius="1">
+			<position lon="11.69461615" lat="57.63473155"/>
+			<leg portsideXTD="0.1" starboardXTD="0.1" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="6" name="Nort Channel # 9" radius="1">
+			<position lon="11.68679107" lat="57.66889707"/>
+			<leg portsideXTD="0.07" starboardXTD="0.07" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="7" name="North Channel # 13" radius="1">
+			<position lon="11.71635432" lat="57.678043"/>
+			<leg portsideXTD="0.07" starboardXTD="0.07" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="8" name="North Channel # 19" radius="1">
+			<position lon="11.74186777" lat="57.67612213"/>
+			<leg portsideXTD="0.07" starboardXTD="0.07" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="9" name="Torshamnen" radius="1">
+			<position lon="11.79223078" lat="57.67943487"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+	</waypoints>
+</route>

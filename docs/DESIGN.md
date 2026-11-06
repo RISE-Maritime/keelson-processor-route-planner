@@ -3,7 +3,8 @@
 Status: **design captured, no service code yet.** This note is the authoritative architecture
 record produced from a 3-repo inspection (chart-server, Keelson, Crowsnest). Companion docs:
 [ROADMAP.md](ROADMAP.md), [KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md),
-[CHART-ADAPTER.md](CHART-ADAPTER.md).
+[CHART-ADAPTER.md](CHART-ADAPTER.md), [PRIOR-ART.md](PRIOR-ART.md) (papers + OSS the engines
+draw on), [BENCHMARK.md](BENCHMARK.md) (tuning the engines against pilot RTZ + AIS).
 
 ---
 
@@ -180,6 +181,14 @@ is taken **positively** from charted deep depth-areas (real islands are holes in
 corridor spanning multiple ENC scales is deconflicted **finest-scale-wins** so coarse cells never
 override finer detail. Unknown-depth (uncharted) water is hard-blocked in conservative mode, else a
 soft-cost.
+
+> **CRS contract: WGS84 primary · AEQD internal · geodesic output.** Working purely in WGS84
+> (no projection) was considered and rejected: the engine's core op is buffering land/hazards by
+> metres, Shapely is planar, and **no Python library offers a true geodesic polygon buffer** — even
+> QGIS/ArcGIS "geodesic buffers" project locally under the hood. `spherely` (S2) is the only
+> non-projected candidate but as of v0.1.1 has no `buffer()`/gridding and models a sphere, not WGS84.
+> AEQD round-trips sub-metre at corridor scale, so projecting once is both correct and more accurate
+> than degree-space Shapely. Published leg distances/bearings, by contrast, are geodesic (`pyproj.Geod`).
 
 ---
 

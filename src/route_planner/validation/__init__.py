@@ -15,6 +15,8 @@ import time
 
 from shapely.geometry import LineString
 
+from ..model import enums as E
+from ..model.position import lat_lon
 from ..model.vessel_profile import EXTENSION_NAME, MANUFACTURER
 
 logger = logging.getLogger(__name__)
@@ -49,16 +51,16 @@ def _grid_cell(nav) -> float:
     return cell
 
 
-def _challenge_type(R, kind):
+def _challenge_type(kind):
     return {
-        "shallow_but_legal": R.SHALLOW_WATER,
-        "outside_fairway": R.REGULATORY_LIMIT,
-        "restricted_soft": R.REGULATORY_LIMIT,
-        "near_land_margin": R.TECHNICAL_LIMIT,
-        "poor_chart_quality": R.TECHNICAL_LIMIT,
-        "unknown_depth": R.TECHNICAL_LIMIT,
-        "traffic_density": R.TRAFFIC_DENSITY,
-    }.get(kind, R.OTHER)
+        "shallow_but_legal": E.SHALLOW_WATER,
+        "outside_fairway": E.REGULATORY_LIMIT,
+        "restricted_soft": E.REGULATORY_LIMIT,
+        "near_land_margin": E.TECHNICAL_LIMIT,
+        "poor_chart_quality": E.TECHNICAL_LIMIT,
+        "unknown_depth": E.TECHNICAL_LIMIT,
+        "traffic_density": E.TRAFFIC_DENSITY,
+    }.get(kind, E.OTHER)
 
 
 def _planner_entry(route, create: bool = True):
@@ -102,8 +104,6 @@ def _turn_angle_deg(a, b, c) -> float:
 
 def validate(route, nav):
     """Populate ``route.issues`` / ``route.challenges`` / ``status`` from a NavigabilityResult."""
-    import keelson.payloads.Route_pb2 as R
-
     now = time.time_ns()
     del route.issues[:]  # idempotent: re-validation replaces any prior report
     del route.challenges[:]
@@ -111,7 +111,7 @@ def validate(route, nav):
     ids = [wp.id for wp in route.waypoints.waypoint]
     proj = nav.projection
     points_m = (
-        [proj.forward(wp.position.longitude, wp.position.latitude) for wp in route.waypoints.waypoint]
+        [proj.forward(*reversed(lat_lon(wp.position))) for wp in route.waypoints.waypoint]
         if proj is not None
         else []
     )
@@ -137,7 +137,7 @@ def validate(route, nav):
             if crossed:
                 issue = route.issues.add()
                 issue.id = f"issue-{name}"
-                issue.severity = R.CRITICAL
+                issue.severity = E.CRITICAL
                 issue.raised_by = "route-planner"
                 issue.raised_at.FromNanoseconds(now)
                 issue.description = (
@@ -154,18 +154,18 @@ def validate(route, nav):
                 seen.add(soft.kind)
                 challenge = route.challenges.add()
                 challenge.id = f"challenge-{soft.kind}"
-                challenge.type = _challenge_type(R, soft.kind)
-                challenge.severity = R.WARNING
+                challenge.type = _challenge_type(soft.kind)
+                challenge.severity = E.WARNING
                 challenge.description = f"route passes through {soft.kind.replace('_', ' ')}"
                 challenge.waypoint_ids.extend(crossed)
 
-    _snapped_challenge(R, route, ids)
-    _turn_challenge(R, route, points_m, ids)
-    _finalize(R, route, now)
+    _snapped_challenge(route, ids)
+    _turn_challenge(route, points_m, ids)
+    _finalize(route, now)
     return route
 
 
-def _snapped_challenge(R, route, ids) -> None:
+def _snapped_challenge(route, ids) -> None:
     entry = _planner_entry(route, create=False)
     if entry is None:
         return
@@ -177,15 +177,15 @@ def _snapped_challenge(R, route, ids) -> None:
     if ends:
         challenge = route.challenges.add()
         challenge.id = "challenge-snapped"
-        challenge.type = R.TECHNICAL_LIMIT
-        challenge.severity = R.WARNING
+        challenge.type = E.TECHNICAL_LIMIT
+        challenge.severity = E.WARNING
         challenge.description = (
             f"{' and '.join(label for label, _id in ends)} snapped to navigable water"
         )
         challenge.waypoint_ids.extend(wid for _label, wid in ends)
 
 
-def _turn_challenge(R, route, points_m, ids) -> None:
+def _turn_challenge(route, points_m, ids) -> None:
     if len(points_m) < 3:
         return
     sharp = [
@@ -196,8 +196,8 @@ def _turn_challenge(R, route, points_m, ids) -> None:
     if sharp:
         challenge = route.challenges.add()
         challenge.id = "challenge-sharp-turn"
-        challenge.type = R.TECHNICAL_LIMIT
-        challenge.severity = R.WARNING
+        challenge.type = E.TECHNICAL_LIMIT
+        challenge.severity = E.WARNING
         challenge.description = (
             f"sharp turn(s) over {SHARP_TURN_DEG:.0f} deg at waypoint(s) "
             f"{', '.join(map(str, sharp))}"
@@ -205,10 +205,10 @@ def _turn_challenge(R, route, points_m, ids) -> None:
         challenge.waypoint_ids.extend(sharp)
 
 
-def _finalize(R, route, now) -> None:
-    critical = any(issue.severity == R.CRITICAL for issue in route.issues)
+def _finalize(route, now) -> None:
+    critical = any(issue.severity == E.CRITICAL for issue in route.issues)
     if critical:
-        route.status = R.ROUTE_ISSUES
+        route.status = E.ROUTE_ISSUES
     attrs = _planner_entry(route).attributes
     attrs["validation_status"] = "issues" if critical else ("warnings" if route.challenges else "ok")
     attrs["n_issues"] = str(len(route.issues))

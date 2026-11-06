@@ -6,6 +6,7 @@ from shapely.geometry import box
 
 from route_planner.chart_adapter.layers import DEPTH_AREAS, ChartFeature, NormalizedChart
 from route_planner.model import vessel_profile as vp
+from route_planner.model.position import set_lat_lon
 
 PROFILE = {
     "name": "usv",
@@ -56,8 +57,7 @@ def request_route(start, end, *, goal="shortest", profile=PROFILE, n_alternative
     route.info.CopyFrom(vp.route_info_from_profile(profile, goal))
     for lat, lon in [start, end]:
         wp = route.waypoints.waypoint.add()
-        wp.position.latitude = lat
-        wp.position.longitude = lon
+        set_lat_lon(wp.position, lat, lon)
     route.extensions.entries.append(
         vp.planner_extension_entry(profile, constraints=constraints, return_alternatives=n_alternatives)
     )

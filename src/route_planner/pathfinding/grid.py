@@ -16,11 +16,52 @@ from . import cost as cost_mod
 
 MAX_DIM = 600  # cap each grid axis; cell size grows for very large corridors
 
+_INF = 1e20
+
+
+def _dt1d(f: np.ndarray) -> np.ndarray:
+    """1-D squared Euclidean distance transform (Felzenszwalb & Huttenlocher lower envelope)."""
+    n = len(f)
+    d = np.empty(n)
+    v = np.zeros(n, dtype=np.int64)  # parabola vertices in the lower envelope
+    z = np.empty(n + 1)  # intersection boundaries
+    k = 0
+    z[0], z[1] = -_INF, _INF
+    for q in range(1, n):
+        s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k])
+        while s <= z[k]:
+            k -= 1
+            s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k])
+        k += 1
+        v[k] = q
+        z[k] = s
+        z[k + 1] = _INF
+    k = 0
+    for q in range(n):
+        while z[k + 1] < q:
+            k += 1
+        d[q] = (q - v[k]) ** 2 + f[v[k]]
+    return d
+
+
+def _edt(foreground: np.ndarray) -> np.ndarray:
+    """Euclidean distance (in cells) from every cell to the nearest True cell in ``foreground``.
+
+    Exact, separable, numpy-only (no scipy). Cells with no foreground in their row+column get a huge
+    distance (≈sqrt(_INF)), which the caller caps — so "no obstacle in view" means no penalty.
+    """
+    f = np.where(foreground, 0.0, _INF)
+    f = np.apply_along_axis(_dt1d, 0, f)
+    f = np.apply_along_axis(_dt1d, 1, f)
+    return np.sqrt(f)
+
 
 class CostGrid:
     """A metric, axis-aligned cost grid over the navigable water."""
 
-    def __init__(self, navigable, soft_costs, weights: dict, cell_size: float) -> None:
+    def __init__(
+        self, navigable, soft_costs, weights: dict, cell_size: float, blocked=None, clear_target: float = 0.0
+    ) -> None:
         self.cell_size = float(cell_size)
         self.weights = weights
         self.w_distance = float(weights.get("distance", 1.0))
@@ -52,6 +93,16 @@ class CostGrid:
             if gw <= 0 or sc.geometry is None or sc.geometry.is_empty:
                 continue
             soft += gw * float(sc.weight) * shapely.contains_xy(sc.geometry, gx, gy)
+
+        # Clearance gradient: prefer cells far from real obstacles (land/shallow/hazard) so routes
+        # bow to mid-channel / run channel centerlines instead of hugging the shore. Penalty ramps
+        # from 1.0 at an obstacle to 0.0 at `clear_target` metres, flat beyond.
+        w_clear = float(weights.get("clearance", 0.0))
+        if w_clear > 0 and clear_target > 0 and blocked is not None and not blocked.is_empty:
+            obstacles = shapely.contains_xy(blocked, gx, gy)
+            if obstacles.any():
+                clearance_m = _edt(obstacles) * self.cell_size
+                soft += w_clear * np.clip((clear_target - clearance_m) / clear_target, 0.0, 1.0)
 
         self.cell_cost = np.where(self.mask, self.w_distance + soft, np.inf)
         self.base_cost = self.cell_cost.copy()  # penalty-free, for ranking alternatives
@@ -88,7 +139,8 @@ class CostGrid:
             minx, miny, maxx, maxy = navigable.bounds
             extent = max(maxx - minx, maxy - miny)
             cell = max(cell, extent / MAX_DIM)
-        return cls(navigable, nav.soft_costs, weights, cell)
+        clear_target = nav.params.clearance_target_m if nav.params else 0.0
+        return cls(navigable, nav.soft_costs, weights, cell, blocked=nav.blocked, clear_target=clear_target)
 
     # --- world <-> cell -------------------------------------------------------
 

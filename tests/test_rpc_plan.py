@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 
-import keelson
 import pytest
 import zenoh
 from _planhelpers import PROFILE, FakeAdapter, deep_chart, request_route
@@ -13,12 +12,13 @@ from keelson.payloads.Route_pb2 import Route
 from route_planner import rpc
 from route_planner.model.store import RouteStore
 from route_planner.publish import RoutePublisher
+from route_planner.rpc import rpc_key
 
 CONF = {"realm": "rise", "entity_id": "route-planner", "source_id": "route-planner/0"}
 
 
 def _rpc_key(procedure):
-    return keelson.construct_rpc_key(CONF["realm"], CONF["entity_id"], procedure, CONF["source_id"])
+    return rpc_key(CONF["realm"], CONF["entity_id"], procedure, CONF["source_id"])
 
 
 def _ok_routes(session, key, payload):
@@ -75,7 +75,7 @@ def test_validate_route_e2e_flags_land_crossing():
         assert replies, "validate_route returned no annotated route"
         route = replies[0]
         assert any(i.id == "issue-land" for i in route.issues)
-        from keelson.payloads.Route_pb2 import ROUTE_ISSUES
+        from route_planner.model.enums import ROUTE_ISSUES
 
         assert route.status == ROUTE_ISSUES
     finally:

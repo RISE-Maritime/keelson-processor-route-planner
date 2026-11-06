@@ -8,6 +8,7 @@ import pytest
 
 from route_planner.model import route_from_planned, routes_from_alternatives
 from route_planner.pathfinding import PlannedRoute
+from route_planner.model.position import lat_lon
 
 PROFILE = {
     "name": "usv",
@@ -36,7 +37,7 @@ def _planned(status_hint="RECOMMENDED"):
 
 
 def test_route_from_planned_maps_fields():
-    from keelson.payloads.Route_pb2 import ARCHIPELAGO, LOXODROME, RECOMMENDED
+    from route_planner.model.enums import ARCHIPELAGO, LOXODROME, RECOMMENDED
 
     r = route_from_planned(
         _planned(),
@@ -51,8 +52,8 @@ def test_route_from_planned_maps_fields():
     assert len(r.waypoints.waypoint) == 3
 
     wp0 = r.waypoints.waypoint[0]
-    assert abs(wp0.position.latitude - 57.70) < 1e-9
-    assert abs(wp0.position.longitude - 11.80) < 1e-9
+    assert abs(lat_lon(wp0.position)[0] - 57.70) < 1e-9
+    assert abs(lat_lon(wp0.position)[1] - 11.80) < 1e-9
     assert wp0.operational_context == ARCHIPELAGO
     assert wp0.planned_sog_knots == 5.0
     assert wp0.leg.geometry_type == LOXODROME
@@ -86,6 +87,16 @@ def test_extensions_carry_metrics_and_profile():
     assert a["route_margin_m"] == "15.0"  # carried from the vessel profile
 
 
+def test_extensions_carry_per_leg_metrics():
+    r = route_from_planned(_planned(), profile=PROFILE, optimization_goal="shortest")
+    a = next(e for e in r.extensions.entries if e.name == "route-planner").attributes
+    dists = a["leg_distances_m"].split(",")
+    bearings = a["leg_bearings_deg"].split(",")
+    assert len(dists) == len(bearings) == len(_planned().waypoints) - 1  # one leg per waypoint gap
+    assert [float(d) for d in dists] == [100.0, 120.0]
+    assert [float(b) for b in bearings] == [45.0, 50.0]
+
+
 def test_evidence_provenance_in_extensions():
     from route_planner.chart_adapter import Provenance
 
@@ -97,7 +108,7 @@ def test_evidence_provenance_in_extensions():
 
 
 def test_routes_from_alternatives_status_and_ids():
-    from keelson.payloads.Route_pb2 import PLANNED, RECOMMENDED
+    from route_planner.model.enums import PLANNED, RECOMMENDED
 
     routes = routes_from_alternatives(
         [_planned("RECOMMENDED"), _planned("PLANNED"), _planned("PLANNED")],

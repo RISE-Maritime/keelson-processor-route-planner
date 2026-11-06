@@ -41,7 +41,7 @@ class RouteStore:
             route = self._routes.get(route_id)
             if route is None:
                 return None
-            from keelson.payloads.Route_pb2 import ACKNOWLEDGED
+            from .enums import ACKNOWLEDGED
 
             route.status = ACKNOWLEDGED
             route.route_edition_number += 1

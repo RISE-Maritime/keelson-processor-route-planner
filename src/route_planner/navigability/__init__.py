@@ -31,6 +31,7 @@ _WEIGHT = {
     "poor_chart_quality": 1.0,
     "restricted_soft": 3.0,
     "unknown_depth": 4.0,
+    "off_ais_corridor": 1.5,
 }
 
 __all__ = [
@@ -86,12 +87,18 @@ def _corridor_wgs84(chart: L.NormalizedChart, corridor) -> BaseGeometry:
 
 
 def build_navigability(
-    chart: L.NormalizedChart, params: NavParams, corridor=None, no_go=()
+    chart: L.NormalizedChart, params: NavParams, corridor=None, no_go=(), ais_corridor=None
 ) -> NavigabilityResult:
-    """Compute navigable/blocked geometry + soft-costs for a corridor. See module docstring."""
+    """Compute navigable/blocked geometry + soft-costs for a corridor. See module docstring.
+
+    ``ais_corridor`` (optional, WGS84 geometry) is a historical-AIS traffic envelope; with
+    ``params.prefer_ais_corridors`` set, routes straying outside it incur an ``off_ais_corridor``
+    soft cost so the planner prefers lanes ships actually use. Inert when either is absent.
+    """
     corridor_wgs84 = geo.clean(_corridor_wgs84(chart, corridor))
     proj = geo.Projection.for_geometry(corridor_wgs84)
     corridor_m = geo.clean(proj.to_metric(corridor_wgs84))
+    ais_corridor_m = geo.clean(proj.to_metric(ais_corridor)) if ais_corridor is not None else None
     conservative = params.block_unknown_depth
     warnings: list = []
 
@@ -119,7 +126,9 @@ def build_navigability(
     dredged = of_layer(L.DREDGED_AREAS)
     hazards = of_layer(L.ROCKS, L.WRECKS, L.OBSTRUCTIONS)
     restricted = of_layer(L.RESTRICTED_AREAS)
-    fairways = of_layer(L.FAIRWAYS)
+    # Preferred channels = marked fairways + dredged channels (the de-facto fairway where FAIRWY is
+    # absent) + traffic-separation lanes. Used for the `outside_fairway` soft cost.
+    fairways = of_layer(L.FAIRWAYS, L.DREDGED_AREAS, L.TSS)
 
     def unsafe_depth(feature):
         return feature.drval1 is not None and feature.drval1 < params.safety_depth_m
@@ -185,6 +194,7 @@ def build_navigability(
         projected=projected,
         restricted=restricted,
         unknown=None if conservative else unknown,
+        ais_corridor=ais_corridor_m,
     )
 
     evidence = {
@@ -266,7 +276,9 @@ def _resolve_by_scale(depare, dredged, land, safety_depth):
     )
 
 
-def _soft_costs(params, navigable, depare, fairways, land_union, projected, restricted, unknown):
+def _soft_costs(
+    params, navigable, depare, fairways, land_union, projected, restricted, unknown, ais_corridor=None
+):
     """Build the geometry-derivable soft-cost regions, each clipped to `navigable`."""
     costs: list = []
     if navigable.is_empty:
@@ -294,6 +306,10 @@ def _soft_costs(params, navigable, depare, fairways, land_union, projected, rest
         fairway_union = geo.safe_union([g for _f, g in fairways])
         if fairway_union is not None:
             add("outside_fairway", geo.clean(navigable.difference(fairway_union)))
+
+    # Historical-AIS corridor: penalize navigable water OUTSIDE the lanes ships actually use.
+    if params.prefer_ais_corridors and ais_corridor is not None and not ais_corridor.is_empty:
+        add("off_ais_corridor", geo.clean(navigable.difference(ais_corridor)))
 
     if land_union is not None:
         outer = geo.buffer_m(land_union, params.route_margin_m * 2)

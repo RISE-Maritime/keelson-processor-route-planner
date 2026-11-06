@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<route xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" version="1.0" xmlns="http://www.cirm.org/RTZ/1/0">
+	<routeInfo routeName="11X Sänkberget via N.Ch to Arendal CT"/>
+	<waypoints>
+		<defaultWaypoint>
+			<leg portsideXTD="1" starboardXTD="1"/>
+		</defaultWaypoint>
+		<waypoint id="1" name="Sänkberget" radius="1">
+			<position lon="11.65752793" lat="57.59973426"/>
+			<leg geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="2" name="Uppgrund" radius="1">
+			<position lon="11.69677498" lat="57.63348557"/>
+			<leg portsideXTD="0.08639309" starboardXTD="0.08639309" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="3" name="North Channel # 9" radius="0.75">
+			<position lon="11.6886476" lat="57.66897148"/>
+			<leg portsideXTD="0.07" starboardXTD="0.07" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="4" name="North Channel # 13" radius="0.75">
+			<position lon="11.71713588" lat="57.67778485"/>
+			<leg portsideXTD="0.05399568" starboardXTD="0.05399568" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="5" name="North Channel # 19" radius="0.75">
+			<position lon="11.73945153" lat="57.6756769"/>
+			<leg portsideXTD="0.05399568" starboardXTD="0.04319654" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="6" name="Torshamnen" radius="0.75">
+			<position lon="11.79224353" lat="57.67916472"/>
+			<leg portsideXTD="0.05399568" starboardXTD="0.04319654" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="7" name="Knippelholmen" radius="0.75">
+			<position lon="11.81451403" lat="57.6791713"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="8" name="Arendal" radius="0.3">
+			<position lon="11.83281563" lat="57.68133581"/>
+			<leg portsideXTD="0.05" starboardXTD="0.05" geometryType="Orthodrome"/>
+		</waypoint>
+		<waypoint id="9" name="Arendal  Basin">
+			<position lon="11.81943106" lat="57.69172248"/>
+			<leg portsideXTD="0.03239741" starboardXTD="0.03239741" geometryType="Orthodrome"/>
+		</waypoint>
+	</waypoints>
+</route>
