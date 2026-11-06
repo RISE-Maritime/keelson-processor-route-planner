@@ -64,6 +64,16 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
   validates every alternative; `validate_route` re-validates an edited route by rebuilding
   navigability. Verified live: clean plans carry only warnings, a land-crossing edit → critical
   issues. *(`hazard_zones[]`/no-go echo + bridge clearance + AIS deferred.)*
+- [x] **keelson `route_planner/v1` (keelson #187).** The service now implements keelson's own
+  `interfaces/RoutePlanner.proto`: `plan_route` takes a typed `PlanRouteRequest` (Coordinates,
+  `RouteInfo` constraints, `OptimizationGoal`, `max_alternatives`, `topology`; planner tunings in
+  `extensions`), `get_route`/`select_route` take a `RouteRef` naming an exact edition, errors carry
+  `ErrorResponse.Code`, and the four procedures are served by `keelson.scaffolding.serve_rpc` (with
+  the interface liveliness token). Publication moved off the removed `route_planned` onto the §6.3
+  edition tree (`route/{id}/edition/{N}` + `latest`), and `select_route` makes a new edition with
+  the §6.4 choreography (`route_change_event`) + `route_status`. keelson is pinned exactly to
+  `0.6.0rc19` from PyPI; the monorepo-SDK install is gone. The P1/P6 notes above describe the
+  earlier contract.
 - [ ] **P8 — Crowsnest route-editor integration.** "Auto-plan route" action (start/end/via by map
   click), goal + vessel-profile + margin selectors, alternatives picker, load selection into
   `atomEditingRoute`, reuse `useRouteSafetyScan`, publish via `useRouteSync`. Wording guardrails.
@@ -83,7 +93,7 @@ COLREG collision avoidance, NOT autonomous execution.** Full design in [DESIGN.m
 ## MVP definition (first working slice)
 
 P1–P8 with: FastAPI plan endpoint → `chart_adapter` → `navigability_engine` (land/depth/no-go) →
-A\* → `keelson.Route` output → validation report → publish on `route_planned` → render + select in
+A\* → `keelson.Route` output → validation report → publish on `route` (edition tree) → render + select in
 the Crowsnest route-editor. **No** MAVLink upload, **no** AIS/weather cost layers, **no** DB
 persistence yet.
 

@@ -34,9 +34,10 @@ there," not "build everything."
    is an explicit **RTZ-1.2 + S-421 superset** with `RouteInfo`, `Waypoints`/`Waypoint`/`Leg`,
    `Schedules`, `ActionPoints`, `HazardZone`, `RouteChallenge`, `RouteIssue`, `RouteSignature`,
    a `RouteStatus` lifecycle enum, and an `Extensions` (vendor `Any`) field on every container.
-   `subjects.yaml` already maps `route`, `route_planned`, `route_active`, `route_status`,
-   `voyage`/`voyage_active`, `route_execution`, `route_change_event`,
-   `route_edit_authority`/`route_edit_request`. → **We adopt `keelson.Route`; we do NOT invent
+   `subjects.yaml` maps `route` (an edition tree: `route/{id}/edition/{N}` + `latest`),
+   `route_status`, `voyage`, `route_execution`, `route_change_event`,
+   `route_edit_authority`/`route_edit_request`. (`route_planned`, `route_active` and
+   `voyage_active` were removed in keelson #141 — lifecycle lives in `Route.status`.) → **We adopt `keelson.Route`; we do NOT invent
    `voyage_route` / `route_geojson` protobufs, and no new subject is needed for the MVP.**
 2. **Keelson key-space hardcodes `/@v0/`** (no major-version variable). Use the SDK helpers
    `construct_pubsub_key(...)` / `construct_rpc_key(...)` and `enclose`/`uncover` for Envelope
@@ -82,9 +83,11 @@ keelson-processor-route-planner/
 Two integration layers:
 
 - **Planning API** — request/response over a **Keelson RPC queryable** (the only transport; no
-  HTTP): `plan_route`, `validate_route`, `get_route`, `select_route`, `export_vehicle_mission`.
-- **Publication layer** — Keelson pub/sub: proposed/selected `keelson.Route` on
-  `route_planned` / `route`; `RouteStatusUpdate` on `route_status`; optional debug overlays on the
+  HTTP), keelson's `route_planner/v1` interface: `plan_route`, `validate_route`, `get_route`,
+  `select_route` (`export_vehicle_mission` is a later phase, outside the interface).
+- **Publication layer** — Keelson pub/sub: every `keelson.Route` edition on
+  `route/{id}/edition/{N}` + `route/{id}/latest`; on selection a `RouteChangeEvent` on
+  `route_change_event` and a `RouteStatusUpdate` on `route_status`; optional debug overlays on the
   existing `navigable_waters_geojson` / `no_go_zone_geojson` subjects.
 
 **Runtime config (CLI / env):** `--realm` (base path), `--entity-id`, `--source-id`, Zenoh
@@ -101,11 +104,13 @@ the chart_adapter). Health/liveness is the process's Keelson **liveliness token*
 ## 4. Planning request & response (API contract)
 
 The request mirrors the brief; the response returns `keelson.Route` alternatives (protobuf over the
-Keelson RPC queryable). On the wire the request is itself a **`keelson.Route` template** — start/end/
-via map to `Waypoints.waypoint[]`, the vessel profile to `RouteInfo`, and the planner-only fields
-(`optimization_goal`, margin, turn radius, UKC, `constraints`, `return_alternatives`) to a
-`route-planner` `Extensions` entry. The indicative JSON below is just a readable view of those
-inputs (see [KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md) §3 for the mapping):
+Keelson RPC queryable). On the wire the request is keelson's **`PlanRouteRequest`**
+(`route_planner/v1`) — start/via/end are its ordered `waypoints` (`Coordinate`), the vessel profile
+is `constraints` (`RouteInfo`), `optimization_goal` is the typed `goal` (`OptimizationGoal`), and
+`return_alternatives` is `max_alternatives`. The planner-only fields (margin, turn radius, UKC,
+preferred speed, `constraints` booleans, and a goal outside the enum) ride in a `route-planner`
+`Extensions` entry. The indicative JSON below is just a readable view of those inputs (see
+[KEELSON-INTEGRATION.md](KEELSON-INTEGRATION.md) §3 for the mapping):
 
 ```json
 {
@@ -321,4 +326,4 @@ pytest, unit + e2e (e2e against a live Zenoh session, mirroring Keelson SDK/conn
 Fixtures: open-water · around-island · archipelago · shallow-area block · via-points · start/end
 outside navigable water (snap + warn) · manually-edited route crossing land · conservative mode
 prefers fairways/deep water · traffic-aware avoids dense corridor (later) · RPC plan_route ·
-Keelson `route_planned` publication · Crowsnest render · `VehicleMission`/MAVLink roundtrip.
+Keelson `route` edition publication · Crowsnest render · `VehicleMission`/MAVLink roundtrip.

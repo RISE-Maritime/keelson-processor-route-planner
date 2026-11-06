@@ -36,13 +36,14 @@ direct from PostGIS, targeted checks over the chart server's HTTP/`zenoh` API). 
 `navigability_engine` turns those features + the vessel profile into navigable/blocked polygons and
 a cost surface. A pathfinder runs A\* over that surface, segmented by via-points. Results serialize
 to **`keelson.Route`** (the existing RTZ-1.2 / S-421 superset already defined in Keelson — we do
-**not** invent a parallel model) and publish on `route_planned` / `route` / `route_status`. The
+**not** invent a parallel model) and publish in keelson's route edition tree (`route/{id}/edition/{N}`
++ `latest`, with `route_change_event` / `route_status` on selection). The
 [Crowsnest `route-editor`](../crowsnest-dev) gets an **"Auto-plan route"** action that calls the
 planner, renders the alternatives, and reuses its existing `useRouteSafetyScan` for re-validation
 after manual edits.
 
 ```
- Crowsnest route-editor ──"Auto-plan"──▶ RoutePlanner RPC ─┐
+ Crowsnest route-editor ──"Auto-plan"──▶ route_planner/v1 ─┐
                                                            │
         ┌──────────────────────────────────────────────────────────────┐
         │  keelson-processor-route-planner                              │
@@ -55,8 +56,8 @@ after manual edits.
         │      │                              serialize → keelson.Route │
         │      ▼                                          │             │
         │   chart-server (PostGIS / /api/* / chart/**)    ▼             │
-        └─────────────────────────────────── publish: route_planned ───┘
-                                                         route_status
+        └──────────────────────────── publish: route/{id}/edition/{N} ─┘
+                                       route/{id}/latest, route_status
 ```
 
 ## Confirmed design decisions
@@ -71,21 +72,21 @@ after manual edits.
 
 ## Quick start
 
-Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/). **keelson must be installed from the
-monorepo SDK** — the canonical contract type `keelson.Route` (`payloads.Route_pb2`) is not in the
-PyPI wheel.
+Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/). keelson is pinned exactly to a
+published release (`keelson==0.6.0rc19`, keelson `0.6.0-pre.19`), which carries the
+`route_planner/v1` interface this service implements.
 
 ```bash
-# Setup. Install keelson from the monorepo first (Route_pb2), then our package + dev tools.
-uv pip install ../keelson/sdks/python
-uv pip install -e ".[dev]"
+# Setup: the locked environment, with dev tools.
+uv sync --extra dev
 
 # Run against a local keelson/zenoh router (defaults: realm=rise, entity=route-planner)
 route_planner --connect tcp/localhost:7447
-# On start it declares a liveliness token (the health signal) and the RoutePlanner RPC
-# queryables (plan_route / validate_route / get_route / select_route). In the skeleton each
-# replies "not implemented yet"; query one with any keelson RPC client, e.g. the key
-#   rise/@v0/route-planner/@rpc/plan_route/route-planner/0
+# On start it declares a liveliness token (the health signal) and serves keelson's
+# route_planner/v1 RPC interface (plan_route / validate_route / get_route / select_route), e.g.
+#   rise/@v0/route-planner/@rpc/route_planner/v1/plan_route/route-planner/0
+# plan_route takes a keelson PlanRouteRequest and multi-replies, so query with
+# consolidation=NONE. See docs/KEELSON-INTEGRATION.md §3.
 
 # Lint + test
 ruff check bin/ src/ tests/

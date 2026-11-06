@@ -16,7 +16,6 @@ import route_planner
 from route_planner import app as app_mod
 from route_planner import config as config_mod
 from route_planner import rpc
-from route_planner.rpc import rpc_key
 
 
 def test_package_version():
@@ -64,11 +63,44 @@ def test_config_rejects_empty_realm():
 
 
 def test_rpc_procedures_and_keyspace():
+    import zenoh
+
+    from route_planner.model.store import RouteStore
 
     assert rpc.PROCEDURES == ("plan_route", "validate_route", "get_route", "select_route")
-    key = rpc_key("rise", "route-planner", "plan_route", "route-planner/0")
-    # The versioned key current keelson builds, as Crowsnest's rpcKeyFor("route_planner/v1") does.
-    assert key == "rise/@v0/route-planner/@rpc/route_planner/v1/plan_route/route-planner/0"
+    assert (rpc.INTERFACE, rpc.INTERFACE_VERSION) == ("route_planner", "v1")
+    conf = config_mod.load(None)
+    session = zenoh.open(zenoh.Config())
+    try:
+        server, publisher = _serve(session, conf, RouteStore())
+        try:
+            keys = sorted(str(q.key_expr) for q in server.queryables)
+            # The versioned key, as Crowsnest's rpcKeyFor("route_planner/v1") builds it.
+            assert keys == sorted(
+                f"rise/@v0/route-planner/@rpc/route_planner/v1/{p}/route-planner/0"
+                for p in rpc.PROCEDURES
+            )
+            assert server.liveliness_token is not None
+            tokens = [
+                str(r.ok.key_expr)
+                for r in session.liveliness().get("rise/@v0/route-planner/@rpc/**")
+                if r.ok is not None
+            ]
+            assert "rise/@v0/route-planner/@rpc/route_planner/v1/*/route-planner/0" in tokens
+        finally:
+            rpc.close(server)
+            publisher.close()
+    finally:
+        session.close()
+
+
+def _key(conf, procedure):
+    import keelson
+
+    return keelson.construct_rpc_key(
+        conf["realm"], conf["entity_id"], rpc.INTERFACE, rpc.INTERFACE_VERSION, procedure,
+        conf["source_id"],
+    )
 
 
 def _rpc_query(session, key, payload=None):
@@ -87,75 +119,69 @@ def _rpc_query(session, key, payload=None):
     return oks, errs
 
 
-def _install(session, conf, store):
-    """install_queryables with a fake adapter + a real publisher (P6 signature)."""
+def _serve(session, conf, store):
+    """rpc.serve with a fake adapter + a real publisher."""
     from _planhelpers import FakeAdapter, deep_chart
 
     from route_planner.publish import RoutePublisher
 
     publisher = RoutePublisher(session, conf)
-    queryables = rpc.install_queryables(session, conf, store, FakeAdapter(deep_chart()), publisher)
-    return queryables, publisher
+    server = rpc.serve(session, conf, store, FakeAdapter(deep_chart()), publisher)
+    return server, publisher
 
 
 def test_rpc_validate_route_rejects_empty_request():
-    """validate_route on a request with <2 waypoints -> INVALID_ARGUMENT (it is implemented now)."""
+    """validate_route on a request with <2 waypoints -> a typed INVALID_ARGUMENT."""
     import zenoh
+    from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
 
     from route_planner.model.store import RouteStore
 
     conf = config_mod.load(None)
-    key = rpc_key(conf["realm"], conf["entity_id"], "validate_route", conf["source_id"])
-
     session = zenoh.open(zenoh.Config())
     try:
-        queryables, publisher = _install(session, conf, RouteStore())
+        server, publisher = _serve(session, conf, RouteStore())
         try:
-            _oks, errs = _rpc_query(session, key)  # empty Route -> no waypoints
-            assert errs, "expected an error reply from validate_route"
-            # ErrorResponse no longer carries a code enum; the category is prefixed into the description.
-            assert any(e.error_description.startswith("INVALID_ARGUMENT") for e in errs)
+            _oks, errs = _rpc_query(session, _key(conf, "validate_route"))  # empty Route
+            assert [e.code for e in errs] == [ErrorResponse.Code.INVALID_ARGUMENT]
         finally:
-            for q in queryables:
-                q.undeclare()
+            rpc.close(server)
             publisher.close()
     finally:
         session.close()
 
 
 def test_rpc_get_route_not_found_then_seeded():
-    """get_route returns NOT_FOUND for an unknown id, and the stored Route once seeded."""
+    """get_route returns NOT_FOUND for an unknown RouteRef, and the stored edition once seeded."""
     import zenoh
-    from keelson.payloads.Route_pb2 import Route
+    from keelson.interfaces.ErrorResponse_pb2 import ErrorResponse
+    from keelson.payloads.Route_pb2 import Route, RouteRef
 
     from route_planner.model.enums import RECOMMENDED
     from route_planner.model.store import RouteStore
 
     conf = config_mod.load(None)
-    key = rpc_key(conf["realm"], conf["entity_id"], "get_route", conf["source_id"])
+    key = _key(conf, "get_route")
     store = RouteStore()
 
     session = zenoh.open(zenoh.Config())
     try:
-        queryables, publisher = _install(session, conf, store)
+        server, publisher = _serve(session, conf, store)
         try:
-            # unknown id -> NOT_FOUND
-            req_missing = Route(route_id="ghost").SerializeToString()
-            oks, errs = _rpc_query(session, key, payload=req_missing)
+            missing = RouteRef(route_id="ghost", route_edition_number=1).SerializeToString()
+            oks, errs = _rpc_query(session, key, payload=missing)
             assert not oks
-            assert any(e.error_description.startswith("NOT_FOUND") for e in errs)
+            assert [e.code for e in errs] == [ErrorResponse.Code.NOT_FOUND]
 
-            # seed the store, then the same query returns the Route
             store.put(Route(route_id="r1", status=RECOMMENDED, route_edition_number=1))
-            oks, errs = _rpc_query(session, key, payload=Route(route_id="r1").SerializeToString())
+            ref = RouteRef(route_id="r1", route_edition_number=1).SerializeToString()
+            oks, errs = _rpc_query(session, key, payload=ref)
             assert oks, f"expected the stored Route, got errors: {[e.error_description for e in errs]}"
-            got = Route()
-            got.ParseFromString(oks[0])
+            got = Route.FromString(oks[0])
             assert got.route_id == "r1"
             assert got.status == RECOMMENDED
         finally:
-            for q in queryables:
-                q.undeclare()
+            rpc.close(server)
             publisher.close()
     finally:
         session.close()

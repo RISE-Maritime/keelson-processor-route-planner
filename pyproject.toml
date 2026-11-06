@@ -11,11 +11,11 @@ license = "Apache-2.0"
 requires-python = ">=3.13"
 authors = [{ name = "RISE Maritime" }]
 dependencies = [
-    # keelson MUST be installed from the monorepo SDK (/Users/ted/Documents/CODE/keelson/sdks/python):
-    # the canonical contract is keelson.Route, and the PyPI wheel (0.5.1 / 0.5.2) does NOT ship
-    # payloads.Route_pb2 (the generated *_pb2 are gitignored, regenerated only at release). Install
-    # it first, then `uv pip install -e ".[dev]"` (see README/CONTRIBUTING).
-    "keelson",
+    # An EXACT published keelson, never a local checkout or a range. 0.6.0rc19 (keelson
+    # 0.6.0-pre.19) is the first published SDK carrying everything the planner speaks: the
+    # route_planner/v1 interface (PlanRouteRequest, RouteRef), the typed ErrorResponse.Code,
+    # RouteChangeEvent, keelson.scaffolding.serve_rpc and the interface/version RPC key.
+    "keelson==0.6.0rc19",
     "eclipse-zenoh>=1.2.1",
     "shapely>=2.0",
     "pyproj>=3.6",

@@ -1,10 +1,9 @@
-"""Entry point: parse args, load config, open zenoh, declare RPC queryables, idle until shutdown.
+"""Entry point: parse args, load config, open zenoh, serve route_planner/v1, idle until shutdown.
 
-P1 skeleton: this wires argument parsing, config, the zenoh session, a liveliness token (the
-keelson-native health signal), and the ``RoutePlanner`` RPC queryables, then idles under graceful
-shutdown. Each queryable replies "not implemented yet" until the chart_adapter / navigability /
-pathfinding engines and pub/sub publishers are filled in across P2-P8 (see docs/ROADMAP.md). The
-sole integration transport is Keelson RPC - there is no HTTP layer.
+Wires argument parsing, config, the zenoh session, the source-level liveliness token and the
+keelson ``route_planner/v1`` RPC interface (whose own interface-level token ``serve_rpc``
+declares), then idles under graceful shutdown. The sole integration transport is Keelson RPC -
+there is no HTTP layer.
 """
 
 from __future__ import annotations
@@ -41,12 +40,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def run(session, conf: dict) -> None:
-    """Declare the liveliness token + RoutePlanner RPC queryables, then block until shutdown.
-
-    P1: the queryables reply "not implemented yet". The planning engines and pub/sub publishers are
-    added in later phases (docs/ROADMAP.md).
-    """
-    from keelson.scaffolding import GracefulShutdown, declare_liveliness_token
+    """Declare liveliness + serve route_planner/v1, then block until shutdown."""
+    from keelson.scaffolding import GracefulShutdown, declare_liveliness
 
     from .chart_adapter import ChartAdapter
     from .publish import RoutePublisher
@@ -60,14 +55,20 @@ def run(session, conf: dict) -> None:
     publisher = RoutePublisher(session, conf)
 
     with GracefulShutdown() as shutdown:
-        with declare_liveliness_token(session, realm, entity_id, source_id):
-            queryables = rpc.install_queryables(session, conf, store, adapter, publisher)
+        # Source-level token only. The route keys this planner writes (route/{id}/edition/{N},
+        # route/{id}/latest, route_status/{id}, route_change_event/{id}/{cid}) carry no producer
+        # chunk, so there is no producer prefix to hang a subject-level token on (keelson spec
+        # §2.1.1, §6.3). The interface-level token comes from serve_rpc.
+        with declare_liveliness(session, realm, entity_id, source_id):
+            server = rpc.serve(session, conf, store, adapter, publisher)
             logger.info(
-                "route-planner connected as %s/%s/%s, %d RPC queryable(s) declared",
+                "route-planner connected as %s/%s/%s, serving %s/%s (%d procedures)",
                 realm,
                 entity_id,
                 source_id,
-                len(queryables),
+                rpc.INTERFACE,
+                rpc.INTERFACE_VERSION,
+                len(server.queryables),
             )
             try:
                 # wait() returns True as soon as a shutdown signal arrives, so the loop stays
@@ -75,8 +76,7 @@ def run(session, conf: dict) -> None:
                 while not shutdown.wait(1.0):
                     pass
             finally:
-                for q in queryables:
-                    q.undeclare()
+                rpc.close(server)
                 publisher.close()
                 adapter.close()
 

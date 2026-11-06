@@ -9,13 +9,11 @@ Thanks for your interest in improving the Keelson route planner.
 
 ## Development setup
 
-Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/). **keelson must be installed from the
-[monorepo SDK](../keelson/sdks/python)** — the canonical contract type `keelson.Route`
-(`payloads.Route_pb2`) is not in the PyPI wheel — so install it first, then this package:
+Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/). keelson is pinned exactly to a
+published release in `pyproject.toml` — never install it from a local checkout:
 
 ```bash
-uv pip install ../keelson/sdks/python   # monorepo keelson (Route_pb2 ✓)
-uv pip install -e ".[dev]"              # our package + dev tools (keelson already satisfied)
+uv sync --extra dev        # the locked environment + dev tools (add --all-extras for the rest)
 ```
 
 This installs the runtime dependencies (`keelson`, `eclipse-zenoh`, `shapely`, `pyproj`, `pyyaml`,
