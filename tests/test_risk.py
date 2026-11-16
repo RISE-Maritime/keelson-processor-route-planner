@@ -120,10 +120,10 @@ def test_run_validate_carries_the_risk_profile():
 def test_the_platform_the_particulars_came_from_is_kept():
     r = route()
     e = r.extensions.entries.add(manufacturer="se.rise", name=risk.RISK_EXTENSION, version="1")
-    e.attributes["platform"] = "slipway-usv-alpha"
+    e.attributes["platform"] = "sim-usv-alpha"
     e.attributes["particulars_basis"] = "registry; pilot card signed 2026-09-20"
     a = entry(risk.annotate(r, None)).attributes
-    assert a["platform"] == "slipway-usv-alpha" and a["particulars_basis"].startswith("registry")
+    assert a["platform"] == "sim-usv-alpha" and a["particulars_basis"].startswith("registry")
 
 
 def test_the_series_can_be_drawn_on_a_chart(assessed):
